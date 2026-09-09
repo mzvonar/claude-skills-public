@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>__PAGE_TITLE__</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      line-height: 1.6;
+      padding: 2rem;
+    }
+
+    .page {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    header {
+      margin-bottom: 2.5rem;
+      border-bottom: 1px solid #2d3748;
+      padding-bottom: 1.5rem;
+    }
+
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #f7fafc;
+      margin-bottom: 0.35rem;
+    }
+
+    header .branch {
+      font-size: 0.85rem;
+      color: #718096;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+
+    .summary-bar {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2.5rem;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .badge.critical { background: rgba(252,129,74,0.15); border: 1px solid rgba(252,129,74,0.4); color: #fc814a; }
+    .badge.important { background: rgba(246,173,85,0.12); border: 1px solid rgba(246,173,85,0.35); color: #f6ad55; }
+    .badge.suggestion { background: rgba(72,187,120,0.12); border: 1px solid rgba(72,187,120,0.3); color: #68d391; }
+
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .badge.critical .dot { background: #fc814a; }
+    .badge.important .dot { background: #f6ad55; }
+    .badge.suggestion .dot { background: #68d391; }
+
+    .overview {
+      background: #1a202c;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 2.5rem;
+      font-size: 0.92rem;
+      color: #a0aec0;
+    }
+
+    .overview strong { color: #e2e8f0; }
+
+    section { margin-bottom: 3rem; }
+
+    section > h2 {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #2d3748;
+    }
+
+    section.critical > h2 { color: #fc814a; border-color: rgba(252,129,74,0.3); }
+    section.important > h2 { color: #f6ad55; border-color: rgba(246,173,85,0.25); }
+    section.suggestion > h2 { color: #68d391; border-color: rgba(72,187,120,0.2); }
+
+    .finding {
+      background: #1a202c;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+
+    .finding-header {
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .finding-header:hover { background: rgba(255,255,255,0.02); }
+
+    .severity-pill {
+      flex-shrink: 0;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 0.2rem 0.55rem;
+      border-radius: 4px;
+      margin-top: 2px;
+    }
+
+    .pill-critical  { background: rgba(252,129,74,0.2);  color: #fc814a; }
+    .pill-important { background: rgba(246,173,85,0.15); color: #f6ad55; }
+    .pill-suggestion{ background: rgba(72,187,120,0.15); color: #68d391; }
+
+    .finding.fixed { border-color: rgba(72,187,120,0.3); }
+    .finding.fixed .finding-header { opacity: 0.6; }
+    .finding.fixed .finding-header:hover { opacity: 0.8; }
+
+    .fixed-badge {
+      flex-shrink: 0;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      margin-top: 2px;
+      background: rgba(72,187,120,0.15);
+      color: #68d391;
+      border: 1px solid rgba(72,187,120,0.3);
+    }
+
+    .finding-title {
+      flex: 1;
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: #e2e8f0;
+    }
+
+    .chevron {
+      flex-shrink: 0;
+      color: #4a5568;
+      font-size: 0.8rem;
+      margin-top: 3px;
+      transition: transform 0.2s;
+    }
+
+    .finding.open .chevron { transform: rotate(90deg); }
+
+    .finding-body {
+      display: none;
+      padding: 0 1.25rem 1.25rem;
+      border-top: 1px solid #2d3748;
+    }
+
+    .finding.open .finding-body { display: block; }
+
+    .location-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin: 0.85rem 0 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .location {
+      display: inline-flex;
+      align-items: center;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.78rem;
+      color: #63b3ed;
+      background: rgba(99,179,237,0.1);
+      border: 1px solid rgba(99,179,237,0.2);
+      border-radius: 5px;
+      padding: 0.2rem 0.6rem;
+    }
+
+    .line-range {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.72rem;
+      color: #4a5568;
+      user-select: none;
+    }
+
+    .multi-location {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      margin: 0.85rem 0 0.75rem;
+    }
+
+    .why {
+      font-size: 0.88rem;
+      color: #a0aec0;
+      margin-bottom: 0.85rem;
+    }
+
+    .why strong { color: #cbd5e0; }
+
+    pre {
+      background: #0d1117;
+      border: 1px solid #2d3748;
+      border-radius: 7px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin-bottom: 0.85rem;
+    }
+
+    code {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.8rem;
+      line-height: 1.6;
+    }
+
+    .label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #4a5568;
+      margin-bottom: 0.35rem;
+    }
+
+    .label.current  { color: #fc814a; }
+    .label.improved { color: #68d391; }
+
+    .fix-note {
+      font-size: 0.85rem;
+      color: #a0aec0;
+      background: rgba(255,255,255,0.03);
+      border-left: 3px solid #2d3748;
+      padding: 0.6rem 0.85rem;
+      border-radius: 0 5px 5px 0;
+      margin-top: 0.5rem;
+    }
+
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid #2d3748;
+      font-size: 0.78rem;
+      color: #4a5568;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+__BODY_CONTENT__
+</div>
+<script>
+  document.querySelectorAll('.finding-header').forEach(h => {
+    h.addEventListener('click', () => {
+      h.closest('.finding').classList.toggle('open');
+    });
+  });
+</script>
+</body>
+</html>

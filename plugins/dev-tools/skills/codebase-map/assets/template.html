@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codebase Map</title>
+<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/markmap-view@0.18"></script>
+<script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.18/dist/browser/index.iife.min.js"></script>
+<style>
+  html,body{margin:0;height:100%;background:#0f1117;color:#e6e9f0;font-family:system-ui,sans-serif;overflow:hidden;}
+  #graph,#detail{position:fixed;inset:0;transition:opacity .35s ease, transform .35s ease;}
+  #detail{display:none;opacity:0;flex-direction:column;background:#0f1117;}
+  body.detail #graph{opacity:0;transform:scale(1.18);pointer-events:none;}
+  body.detail #detail{display:flex;opacity:1;}
+  #mm{flex:1;width:100%;height:100%;}
+  #dbar{display:flex;align-items:center;gap:14px;padding:10px 14px;background:#161b24;border-bottom:1px solid #2a2f3c;font-size:14px;}
+  #dbar #svcname{color:#fff;font-weight:700;font-size:15px;} #dbar .dim{color:#8b93a7;font-size:12px;margin-left:auto;}
+  button#back{background:#1f6feb;color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.4);}
+  button#back:hover{background:#388bfd;}
+  #ddesc{padding:10px 16px;background:#11151d;border-bottom:1px solid #21262d;color:#b9c0cc;font-size:13px;line-height:1.55;}
+  #ddesc b{color:#e6e9f0;}
+  .panel{position:fixed;z-index:10;background:rgba(20,23,31,.92);border:1px solid #2a2f3c;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.5;}
+  #title{top:10px;left:10px;color:#fff;font-weight:600;}
+  #legend{bottom:10px;left:10px;max-width:260px;}
+  #legend .row{display:flex;align-items:center;gap:6px;margin:2px 0;}
+  #legend .sw{width:12px;height:12px;border-radius:3px;display:inline-block;}
+  #legtoggle{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;color:#fff;font-weight:600;}
+  #legbody{margin-top:8px;}
+  #legend.collapsed #legbody{display:none;}
+  body.detail #legend,body.detail #title{display:none;}
+  #info{bottom:10px;right:10px;max-width:300px;display:none;}
+  #info h3{margin:0 0 4px;font-size:13px;color:#fff;}
+  #err{position:fixed;inset:0;display:none;align-items:center;justify-content:center;color:#8b93a7;padding:20px;text-align:center;}
+</style>
+</head><body>
+<div id="graph"></div>
+<div id="title" class="panel"></div>
+<div id="legend" class="panel"><div id="legtoggle"><span>Legend</span><span id="legcaret">▾</span></div><div id="legbody"></div></div>
+<div id="info" class="panel"></div>
+<div id="detail">
+  <div id="dbar"><button id="back">← Back to graph</button><span id="svcname"></span><span class="dim">scroll = zoom · click node = expand · Esc = back</span></div>
+  <div id="ddesc"></div>
+  <svg id="mm"></svg>
+</div>
+<div id="err"></div>
+<script>
+fetch('data.json').then(r=>r.json()).then(init).catch(e=>{
+  document.getElementById('err').style.display='flex';
+  document.getElementById('err').textContent='Could not load data.json ('+e+'). Serve this folder over HTTP (file:// blocks fetch).';
+});
+
+function init(DATA){
+  document.title=DATA.title||'Codebase Map';
+  document.getElementById('title').textContent=DATA.title||'Codebase Map';
+  const groups=DATA.groups||{};
+  const gcolor=g=>(groups[g]&&groups[g].color)||'#6e7681';
+  const gshape=g=>(groups[g]&&groups[g].shape)||'box';
+  const dark=g=>gshape(g)==='box';
+
+  const nodes=new vis.DataSet(DATA.nodes.map(n=>({
+    id:n.id,label:n.label||n.id,group:n.group,title:n.description||'',shape:gshape(n.group),
+    color:{background:gcolor(n.group),border:'#1b1e26',highlight:{background:gcolor(n.group),border:'#fff'}},
+    font:{color:dark(n.group)?'#0f1117':'#dfe3ec',size:14},borderWidth:2,margin:8})));
+  const edges=new vis.DataSet((DATA.edges||[]).map(e=>({
+    from:e.from,to:e.to,label:e.label||'',arrows:{to:{enabled:true,scaleFactor:.6}},
+    dashes:e.kind==='planned',width:e.kind==='planned'?2:1.4,smooth:{type:'dynamic'},
+    font:{color:'#9aa3b2',size:10,strokeColor:'#0f1117',strokeWidth:3},
+    color:{color:e.kind==='planned'?'#3fb950':'#444b5a',highlight:'#7cc4ff'}})));
+
+  const net=new vis.Network(document.getElementById('graph'),{nodes,edges},{
+    physics:{solver:'forceAtlas2Based',forceAtlas2Based:{gravitationalConstant:-60,springLength:140,avoidOverlap:.6},stabilization:{iterations:250}},
+    interaction:{hover:true,tooltipDelay:120,navigationButtons:true,keyboard:true}});
+  net.once('stabilizationIterationsDone',()=>net.setOptions({physics:false}));
+  setTimeout(()=>net.setOptions({physics:false}),5000);
+
+  // legend from groups actually in use
+  const used=[...new Set(DATA.nodes.map(n=>n.group))];
+  document.getElementById('legbody').innerHTML=
+    used.map(g=>`<div class="row"><span class="sw" style="background:${gcolor(g)}"></span> ${g}</div>`).join('')
+    +`<hr style="border-color:#2a2f3c">solid = current · <span style="color:#3fb950">dashed = planned</span><br><b>click a module → zoom into its endpoints</b>`;
+
+  const modules=DATA.modules||{};
+  const info=document.getElementById('info');
+  let transformer=null,curMM=null;
+  function showDetail(id){
+    const md=modules[id]&&modules[id].markdown; if(!md) return;
+    if(!(window.markmap&&window.markmap.Transformer&&window.markmap.Markmap)){
+      alert('Map library still loading (markmap CDN needs internet). Try again in a moment.');return;}
+    if(!transformer)transformer=new markmap.Transformer();
+    const {root}=transformer.transform(md);
+    const svg=document.getElementById('mm');svg.innerHTML='';
+    document.getElementById('svcname').textContent=id;
+    const n=nodes.get(id);document.getElementById('ddesc').innerHTML=(n&&n.title)?('<b>'+id+'</b> — '+n.title):'';
+    info.style.display='none';document.body.classList.add('detail');
+    requestAnimationFrame(()=>{curMM=markmap.Markmap.create(svg,{initialExpandLevel:2,duration:300,maxWidth:460},root);setTimeout(()=>curMM&&curMM.fit(),80);});
+  }
+  function showGraph(){document.body.classList.remove('detail');}
+  document.getElementById('back').onclick=showGraph;
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')showGraph();});
+  net.on('click',p=>{
+    if(!p.nodes.length){info.style.display='none';return;}
+    const id=p.nodes[0];
+    if(modules[id]){showDetail(id);return;}
+    const n=nodes.get(id);info.style.display='block';info.innerHTML='<h3>'+id+'</h3>'+(n.title||'');
+  });
+  window.addEventListener('resize',()=>{if(document.body.classList.contains('detail')&&curMM)curMM.fit();});
+
+  const lg=document.getElementById('legend'),lc=document.getElementById('legcaret');
+  document.getElementById('legtoggle').onclick=()=>{lg.classList.toggle('collapsed');lc.textContent=lg.classList.contains('collapsed')?'▸':'▾';};
+  if(window.innerWidth<700){lg.classList.add('collapsed');lc.textContent='▸';}
+}
+</script>
+</body></html>

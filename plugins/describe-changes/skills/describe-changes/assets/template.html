@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<title>__TITLE__</title>
+<style>
+:root{
+  --bg:#0f1117;--bg2:#161a23;--card:#1a202c;--line:#2d3748;--line2:#3b4556;
+  --fg:#e2e8f0;--fg2:#a0aec0;--fg3:#718096;--mono:'SF Mono','Fira Code',Menlo,Consolas,monospace;
+  --crit:#fc814a;--med:#f6ad55;--low:#68d391;--info:#63b3ed;--violet:#b794f4;
+  --add:#2f855a;--del:#c53030;--radius:12px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--fg);line-height:1.55;padding:0 0 6rem;font-size:15px}
+a{color:var(--info)}
+code,.mono{font-family:var(--mono);font-size:.85em}
+.page{max-width:900px;margin:0 auto;padding:1rem}
+@media(min-width:700px){.page{padding:2rem 1.5rem}}
+header.top{padding:.5rem 0 1rem;border-bottom:1px solid var(--line);margin-bottom:1.25rem}
+header.top h1{font-size:1.3rem;font-weight:700;color:#f7fafc;line-height:1.3}
+header.top .sub{font-size:.8rem;color:var(--fg3);font-family:var(--mono);margin-top:.3rem;word-break:break-all}
+.chips{display:flex;flex-wrap:wrap;gap:.5rem;margin:.85rem 0 0}
+.chip{display:inline-flex;align-items:center;gap:.4rem;padding:.3rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:var(--bg2);border:1px solid var(--line);color:var(--fg2)}
+.chip b{color:var(--fg)}
+.chip.crit{border-color:rgba(252,129,74,.4);color:var(--crit)}.chip.med{border-color:rgba(246,173,85,.35);color:var(--med)}.chip.low{border-color:rgba(104,211,145,.3);color:var(--low)}.chip.noise{border-color:rgba(183,148,244,.35);color:var(--violet)}
+.dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex-shrink:0}
+section{margin:0 0 2rem}
+section>h2{font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--fg3);margin:0 0 .75rem;padding-bottom:.4rem;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+section>h2 .cnt{font-weight:500;letter-spacing:0;text-transform:none;font-size:.75rem}
+/* Collapsible section. The twisty sits before the title and the whole h2 is the hit target, so it
+   works on a phone without a precise tap. Body hidden via [hidden] on the wrapper, not display:none
+   on children, so a re-render cannot leave half a section visible. */
+section>h2.sec-t{cursor:pointer;user-select:none;-webkit-user-select:none}
+section>h2.sec-t .tw{display:inline-block;width:.9em;margin-right:.35rem;color:var(--fg3);transition:transform .12s ease}
+section>h2.sec-t[aria-expanded="false"] .tw{transform:rotate(-90deg)}
+section>h2.sec-t:hover{color:var(--fg)}
+section>h2.sec-t .lhs{display:flex;align-items:center;gap:0;min-width:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:.75rem;overflow:hidden}
+.card.sev-critical{border-left:4px solid var(--crit)}.card.sev-medium{border-left:4px solid var(--med)}.card.sev-low{border-left:4px solid var(--low)}
+.card-h{display:flex;align-items:flex-start;gap:.6rem;padding:.85rem 1rem;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
+.card-h:active{background:rgba(255,255,255,.03)}
+/* A twisty turns in place. It needs a box of its own to do that: inline text rotates about the
+   centre of however wide the glyph's box happens to be, so a caret that is also a flex item gets
+   dragged around an arc. Fixed square + inline-block + explicit origin pins it. */
+.tw{display:inline-block;flex:0 0 auto;width:1em;height:1em;line-height:1;text-align:center;color:var(--fg3);transform-origin:50% 50%;transition:transform .15s}
+.card-h .tw{font-size:.8rem;margin-top:.2rem}
+.card.open .card-h .tw{transform:rotate(90deg)}
+.card-b{display:none;padding:0 1rem 1rem;border-top:1px solid var(--line)}
+.card.open .card-b{display:block}
+.card-b>*+*{margin-top:.8rem}
+.pill{display:inline-block;font-family:var(--mono);font-size:.7rem;font-weight:700;padding:.1rem .45rem;border-radius:6px;letter-spacing:.04em;flex-shrink:0;margin-top:.15rem}
+.pill.critical{background:rgba(252,129,74,.18);color:var(--crit)}.pill.medium{background:rgba(246,173,85,.16);color:var(--med)}.pill.low{background:rgba(104,211,145,.14);color:var(--low)}.pill.noise{background:rgba(183,148,244,.16);color:var(--violet)}.pill.phase{background:rgba(99,179,237,.16);color:var(--info)}
+.title{font-weight:600;color:#f7fafc;flex:1;min-width:0}
+.title small{display:block;font-weight:400;color:var(--fg3);font-size:.78rem;margin-top:.15rem;font-family:var(--mono);word-break:break-all}
+.tags{display:flex;flex-wrap:wrap;gap:.35rem}
+.tag{font-size:.68rem;padding:.12rem .5rem;border-radius:999px;background:var(--bg2);border:1px solid var(--line);color:var(--fg2)}
+.kv{font-size:.9rem;color:var(--fg2)}.kv b{color:var(--fg);display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.2rem}
+/* "Since you last read this": the returning reader's section. Deliberately plain — it is a change
+   log, not a finding, and must not compete with the severity cards below it. */
+.delta .dl-g{margin:.1rem 0 .6rem}
+.delta .dl-g:last-child{margin-bottom:0}
+.delta .dl-g b{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem;color:var(--fg2)}
+.delta .dl-g b.dl-in{color:#7fd1a0}.delta .dl-g b.dl-out{color:var(--fg3)}.delta .dl-g b.dl-ch{color:#e0b050}
+.delta ul{list-style:none;margin:0;padding:0;font-size:.85rem}
+.delta li{padding:.15rem 0;display:flex;gap:.4rem;align-items:baseline;flex-wrap:wrap}
+.delta .dim{color:var(--fg3)}
+.delta .dl-more{margin-top:.7rem;border-top:1px solid var(--line);padding-top:.6rem;font-size:.85rem}
+.delta .dl-more a{color:var(--info);text-decoration:none}
+/* Snapshot picker on a delta page: which reading are we comparing against. */
+.picker{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin-top:.75rem}
+.picker .pl{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--fg3)}
+.picker a.pick{font-size:.75rem;text-decoration:none;color:var(--fg2);border:1px solid var(--line);padding:.28rem .6rem;border-radius:999px;white-space:nowrap}
+.picker a.pick.on{border-color:var(--fg);color:var(--fg)}
+.picker a.pick.full{color:var(--info);border-color:rgba(99,179,237,.4)}
+.fnote{color:var(--fg3);font-size:.75rem;margin-bottom:.5rem}
+.refs{list-style:none;margin:.1rem 0 0;padding:0;font-family:var(--mono);font-size:.78rem}
+.refs li{padding:.12rem 0;word-break:break-all}
+.verify{background:rgba(99,179,237,.08);border:1px solid rgba(99,179,237,.25);border-radius:8px;padding:.7rem .85rem;font-size:.92rem}
+.verify b{color:var(--info);display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.25rem}
+.loc{display:inline-flex;align-items:center;gap:.4rem;font-family:var(--mono);font-size:.78rem;color:var(--fg2);background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:.25rem .5rem;cursor:pointer;max-width:100%;word-break:break-all}
+.loc:active{border-color:var(--info)}
+/* `overscroll-behavior:contain`: code lines are `white-space:pre`, so almost every diff is a
+   horizontal scroller. Reaching the end of one used to hand the gesture to the page behind — a
+   sideways flick paged the document, and a vertical drag started inside a diff that had nothing to
+   scroll vertically moved the page instead of the sheet. */
+.diff{background:#0b0e14;border:1px solid var(--line);border-radius:8px;overflow-x:auto;overscroll-behavior:contain;font-family:var(--mono);font-size:.76rem;line-height:1.45}
+.diff .hh{color:var(--info);padding:.35rem .6rem;border-bottom:1px solid var(--line);background:var(--bg2);white-space:nowrap}
+.diff .hh .hint{color:var(--fg3);margin-left:.6rem;font-size:.9em}
+.diff pre{padding:.4rem 0;margin:0}
+.diff .l{padding:0 .6rem;white-space:pre}
+.diff .l.a{background:rgba(47,133,90,.22);color:#c6f6d5}.diff .l.d{background:rgba(197,48,48,.22);color:#fed7d7}.diff .l.c{color:var(--fg3)}
+/* The line-number gutter is the per-line comment control. `user-select:none` is what keeps the
+   older select-the-code-and-ask gesture intact — without it every copied snippet carries numbers.
+   The 💬 is absolutely positioned INSIDE the gutter's own empty left half, so revealing it on hover
+   cannot shift the code by a pixel (the lines are `white-space:pre`; any inline badge would). */
+.diff .ln{display:inline-block;position:relative;width:3.6em;margin-right:.7rem;padding-right:.45rem;text-align:right;color:var(--fg3);border-right:1px solid var(--line);cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+.diff .ln.off{cursor:default}
+.diff .ln::before{content:"💬";position:absolute;left:.1em;top:0;opacity:0;transition:opacity .1s}
+.diff .l:hover .ln::before,.diff .ln:focus::before{opacity:.7}
+.diff .ln:hover,.diff .ln:focus{color:var(--info);outline:none}
+.diff .ln.off::before{content:none}
+.diff .l.has-c{box-shadow:inset 3px 0 0 var(--info)}
+.diff .l.has-c .ln{color:var(--info);font-weight:700}
+.diff .l.has-c .ln::before{opacity:1}
+details.more summary{cursor:pointer;color:var(--fg2);font-size:.85rem;padding:.3rem 0}
+.fb{display:flex;flex-wrap:wrap;gap:.4rem;padding-top:.2rem}
+.fb button,.btn{font:inherit;font-size:.78rem;font-weight:600;padding:.5rem .8rem;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--fg2);cursor:pointer;min-height:38px;-webkit-tap-highlight-color:transparent}
+.fb button.on{border-color:var(--info);color:var(--info);background:rgba(99,179,237,.12)}
+.fb button.on.danger{border-color:var(--crit);color:var(--crit);background:rgba(252,129,74,.12)}
+.fb textarea{width:100%;font:inherit;font-size:.85rem;background:var(--bg2);color:var(--fg);border:1px solid var(--line2);border-radius:8px;padding:.5rem .7rem;min-height:44px;resize:vertical}
+.narr{font-size:.95rem;color:var(--fg2)}.narr strong{color:var(--fg)}
+/* "Asked for" lede — deliberately subordinate to the summary: the reviewer reads what CHANGED
+   first and drops to the ask only to judge one against the other. One line, never a paragraph. */
+.lede{font-size:.82rem;color:var(--fg3);border-left:2px solid var(--line2);padding-left:.6rem;margin-bottom:.75rem}
+.lede b{display:block;font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;margin-bottom:.15rem;color:var(--fg3)}
+/* Confession — a scannable list, not a wall. Each point is one line; its detail hides behind it. */
+.conf{margin-top:.9rem;border-top:1px solid var(--line);padding-top:.7rem}
+.conf>b{display:block;font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--fg3);margin-bottom:.3rem}
+.conf ul{margin:0;padding-left:1.1rem}
+.conf li{font-size:.9rem;color:var(--fg2);margin:.32rem 0}
+.conf li summary{cursor:pointer;list-style:none}
+.conf li summary::-webkit-details-marker{display:none}
+.conf li summary::after{content:" ⌄";color:var(--fg3);font-size:.78rem}
+.conf li details[open] summary::after{content:" ⌃"}
+.conf li .d{margin:.35rem 0 .55rem;font-size:.85rem;color:var(--fg3);border-left:2px solid var(--line2);padding-left:.6rem}
+.files{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.5rem}
+.files span,button.fpath{font-family:var(--mono);font-size:.7rem;padding:.15rem .45rem;background:var(--bg2);border:1px solid var(--line);border-radius:5px;color:var(--fg2);word-break:break-all}
+/* A file path that is in the diff opens it; one that is not renders as a plain span instead, so a
+   control never does nothing when clicked. The FULL path shows, never the basename — sibling
+   features routinely ship two `actions.ts` or two `membership.ts`, indistinguishable by basename.
+   Styled globally rather than under `.files`: these appear in phases, the uncommitted list and the
+   folded-noise lists alike, and all three should look and behave the same. */
+button.fpath{cursor:pointer;text-align:left;line-height:1.45;-webkit-tap-highlight-color:transparent}
+button.fpath::before{content:"⟨/⟩ ";color:var(--fg3)}
+button.fpath:hover{border-color:var(--line2);color:var(--fg)}
+button.fpath:active{border-color:var(--info)}
+.fold li button.fpath,.fold li span{margin:.1rem 0}
+.legend{display:flex;flex-wrap:wrap;gap:.6rem;font-size:.75rem;color:var(--fg2);margin:.5rem 0}
+/* ---- How to check ---- */
+.pill.check{background:rgba(99,179,237,.16);color:var(--info)}
+.ck-bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.5rem}
+.ck-bar label{font-size:.75rem;color:var(--fg2)}
+.ck-bar input{flex:1;min-width:12rem;font:inherit;font-family:var(--mono);font-size:.78rem;background:var(--bg2);color:var(--fg);border:1px solid var(--line2);border-radius:8px;padding:.5rem .6rem;min-height:38px}
+.ck-warn{font-size:.78rem;color:var(--fg2);border-left:2px solid var(--warn,#d69e2e);padding-left:.6rem;margin-bottom:.8rem}
+.ck-where{font-family:var(--mono);font-size:.75rem;color:var(--info);word-break:break-all;margin-bottom:.5rem}
+.ck-steps{margin:.2rem 0 .6rem;padding-left:1.15rem;font-size:.9rem;color:var(--fg2)}
+.ck-steps li{margin:.28rem 0}
+.ck-cov{margin-top:.5rem;font-size:.75rem;color:var(--fg3)}
+.ck-api{margin-top:.7rem;border-top:1px solid var(--line);padding-top:.6rem}
+.ck-req{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;font-family:var(--mono);font-size:.8rem}
+.ck-req code{word-break:break-all;color:var(--fg)}
+.ck-req .m{font-size:.68rem;font-weight:700;letter-spacing:.04em;padding:.15rem .4rem;border-radius:5px;background:var(--bg2);border:1px solid var(--line2);color:var(--fg2)}
+.ck-req .m-get{color:#68d391;border-color:#2f855a}.ck-req .m-post{color:#f6ad55;border-color:#b7791f}
+.ck-req .m-put,.ck-req .m-patch{color:#63b3ed;border-color:#2b6cb0}.ck-req .m-delete{color:#fc8181;border-color:#c53030}
+.ck-note{font-size:.78rem;color:var(--fg3);margin:.35rem 0}
+.ck-out{margin-top:.5rem}
+.ck-out .st{font-family:var(--mono);font-size:.75rem;margin-bottom:.35rem}
+.ck-out .ok{color:#68d391}.ck-out .bad{color:#fc8181}
+.ck-out pre{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:.6rem;overflow:auto;max-height:16rem;font-family:var(--mono);font-size:.72rem;color:var(--fg2);white-space:pre-wrap;word-break:break-all}
+/* Verified tick — a real checkbox, sized for a thumb, in the header so a card can be ticked without
+   being expanded. 44px of tap target with an 18px box drawn inside it. */
+.ck-done{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;margin:-.6rem 0 -.6rem -.5rem;flex-shrink:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ck-done input{position:absolute;opacity:0;width:0;height:0}
+.ck-done span{width:18px;height:18px;border:1.5px solid var(--line2);border-radius:5px;background:var(--bg2);display:block;position:relative;transition:background .12s,border-color .12s}
+.ck-done input:checked+span{background:#2f855a;border-color:#2f855a}
+.ck-done input:checked+span::after{content:"✓";position:absolute;inset:0;color:#fff;font-size:.72rem;line-height:18px;text-align:center}
+.ck-done input:focus-visible+span{outline:2px solid var(--info);outline-offset:2px}
+.card.ck.done{opacity:.62}
+.card.ck.done .card-h .title{text-decoration:line-through;text-decoration-color:var(--fg3)}
+.ck-mark{margin-top:.7rem;border-top:1px solid var(--line);padding-top:.6rem}
+.ck-mark textarea{width:100%;font:inherit;font-size:.85rem;background:var(--bg2);color:var(--fg);border:1px solid var(--line2);border-radius:8px;padding:.5rem .7rem;min-height:44px;resize:vertical}
+.ck-mark textarea.has{border-color:var(--crit)}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:.3rem;vertical-align:-2px}
+/* user-select:none is DEFENSIVE, not a fix for an observed bug: a drag across the labels was
+   probed in Chromium and selected nothing, because setPointerCapture suppresses the selection
+   default there. That is an engine side-effect, not a guarantee, and the map is a drag surface
+   where selecting a label is never the intent -- so the property states it outright. */
+.map{position:relative;background:#0b0e14;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;height:clamp(220px,58vh,520px);touch-action:none;cursor:grab;-webkit-user-select:none;user-select:none}
+.map:focus-visible{outline:2px solid var(--info);outline-offset:2px}
+.map.grabbing{cursor:grabbing}
+.map.static{height:auto;padding:.5rem;overflow:auto;cursor:default;touch-action:auto}
+.map-stage{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
+.map-stage svg{max-width:none!important;height:auto;display:block}
+.map-tools{display:flex;align-items:center;justify-content:flex-end;gap:.35rem;margin:.4rem 0;flex-wrap:wrap}
+.map-tools .btn{padding:.4rem .7rem;min-width:38px}
+.map-hint{margin-right:auto;color:var(--fg3);font-size:.72rem}
+@media (max-width:560px){.map-hint{display:none}}
+.map-pct{color:var(--fg2);font-size:.75rem;font-family:var(--mono);min-width:3.2em;text-align:right}
+.map-list{font-size:.85rem;color:var(--fg2);font-family:var(--mono);line-height:1.7}
+.map-list .ch-added{color:var(--low)}.map-list .ch-removed{color:var(--crit);text-decoration:line-through}.map-list .ch-modified{color:var(--med)}.map-list .ch-moved,.map-list .ch-renamed,.map-list .ch-split{color:var(--info)}
+.fold .card-h .title{font-weight:500}
+.fold ul{list-style:none;font-family:var(--mono);font-size:.78rem;color:var(--fg2)}
+.fold li{padding:.3rem 0;border-bottom:1px dashed var(--line);word-break:break-all}
+.fold li ul{margin:.3rem 0 0 1rem}.fold li ul li{border:0;padding:.12rem 0;color:var(--fg3)}
+/* Prop-threading flow: an indented tree, drawn with box characters so it needs no layout engine
+   and survives a collapsed card, no-CDN and print. Every file node is still a button. */
+.fold .fnote{color:var(--fg3);font-size:.72rem;padding:.15rem 0 .1rem}
+.fold .flow{margin:.35rem 0 .1rem;overflow-x:auto}
+.fold .flow .frow{display:flex;align-items:baseline;gap:0;white-space:nowrap;padding:.08rem 0}
+.fold .flow .ftree{color:var(--fg3);white-space:pre}
+.fold .flow .dim{color:var(--fg3)}
+.fold .flow button.fpath{margin:0}
+.unrev{font-family:var(--mono);font-size:.8rem}
+.unrev .row{display:flex;align-items:center;gap:.5rem;padding:.45rem 0;border-bottom:1px dashed var(--line)}
+/* Only the PATH grows. This used to be `.row span{flex:1}`, which also matched the caret — a
+   `<span>` — so the twisty took an equal share of the row: a wide empty column on the left, the
+   path crushed into what was left, worst on a phone. It also caused the caret to swing in an arc
+   rather than turn: rotating a stretched box about its own centre moves the glyph with it. */
+.unrev .row .rp{flex:1;word-break:break-all}
+.unrev .row button{font:inherit;font-size:.7rem;padding:.35rem .55rem;border-radius:6px;border:1px solid var(--line2);background:var(--bg2);color:var(--fg2);min-height:34px}
+.unrev .row button.on{border-color:var(--crit);color:var(--crit)}
+.unrev .row.fold-row{cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
+.unrev .row .tw{font-size:.7rem}
+.unrev .row.open .tw{transform:rotate(90deg)}
+.unrev .row .rp{word-break:break-all}
+.unrev .row-body{display:none;padding:.5rem 0 .9rem 1.1rem;border-bottom:1px dashed var(--line)}
+.unrev .row-body>*+*{margin-top:.5rem}
+.unrev .row.open+.row-body{display:block}
+.unrev .row-close{display:flex;justify-content:flex-end;padding-top:.4rem}
+.unrev .row.open{position:sticky;top:0;background:rgba(15,17,23,.96);z-index:4}
+.filter{position:sticky;top:0;z-index:5;background:rgba(15,17,23,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:.6rem 0;margin:-.25rem 0 .75rem;display:flex;gap:.4rem;overflow-x:auto;scrollbar-width:none}
+.filter::-webkit-scrollbar{display:none}
+.filter button{font:inherit;font-size:.78rem;font-weight:600;padding:.45rem .8rem;border-radius:999px;border:1px solid var(--line2);background:var(--bg2);color:var(--fg2);white-space:nowrap;min-height:36px}
+.filter button.on{border-color:var(--fg);color:var(--fg)}
+.hidden{display:none!important}
+.footer{position:fixed;left:0;right:0;bottom:0;z-index:9;background:rgba(22,26,35,.96);border-top:1px solid var(--line);padding:.6rem 1rem calc(.6rem + env(safe-area-inset-bottom));display:flex;align-items:center;gap:.6rem;font-size:.8rem;color:var(--fg2)}
+.footer .st{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.footer .btn.primary{border-color:var(--info);color:var(--info)}
+/* Undelivered feedback is the one state worth shouting about: the reader's note is safe in
+   localStorage but Claude has not seen it, and they cannot tell the difference by looking. */
+.footer.warn{background:rgba(90,26,26,.97);border-top-color:var(--crit)}
+.footer .st.bad{color:#ffd9cc;font-weight:700;white-space:normal}
+.footer .btn.danger{border-color:var(--crit);color:var(--crit);background:rgba(252,129,74,.14)}
+.toast{position:fixed;left:50%;bottom:5rem;transform:translateX(-50%);background:#2a3340;color:var(--fg);padding:.5rem .9rem;border-radius:8px;font-size:.8rem;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
+.toast.show{opacity:1}
+.empty{color:var(--fg3);font-size:.9rem;padding:.5rem 0}
+/* Both sit ABOVE the file sheet (51). Most code in this report is read inside that sheet, so a
+   popup underneath it means a comment started on a diff cannot be typed or sent — the button
+   appears, the popup opens behind the sheet, and the reader is left tapping a dead panel.
+   `position:fixed` for the same reason: the sheet is a fixed, independently-scrolled box, and a
+   button placed in PAGE coordinates lands nowhere near the selection it belongs to. */
+.ask-btn{position:fixed;z-index:60;display:none;font:inherit;font-size:.78rem;font-weight:700;padding:.4rem .7rem;border-radius:999px;border:1px solid var(--info);background:#16202c;color:var(--info);box-shadow:0 4px 16px rgba(0,0,0,.4);cursor:pointer}
+.ask-btn.show{display:block}
+.ask-pop{position:fixed;left:0;right:0;bottom:0;z-index:61;background:var(--bg2);border-top:1px solid var(--line2);padding:.9rem 1rem calc(1rem + env(safe-area-inset-bottom));display:none;box-shadow:0 -8px 30px rgba(0,0,0,.5)}
+.ask-pop.show{display:block}
+@media(min-width:700px){.ask-pop{left:50%;right:auto;bottom:4rem;transform:translateX(-50%);width:560px;border:1px solid var(--line2);border-radius:var(--radius)}}
+.ask-pop .q{font-family:var(--mono);font-size:.8rem;color:var(--info);background:rgba(99,179,237,.08);border-left:3px solid var(--info);padding:.35rem .6rem;margin-bottom:.6rem;word-break:break-word;max-height:4.5rem;overflow:auto;overscroll-behavior:contain}
+.ask-pop .chips{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.6rem}
+.ask-pop .chips button{font:inherit;font-size:.75rem;padding:.35rem .6rem;border-radius:999px;border:1px solid var(--line2);background:var(--bg);color:var(--fg2);cursor:pointer}
+.ask-pop textarea{width:100%;font:inherit;font-size:.9rem;background:var(--bg);color:var(--fg);border:1px solid var(--line2);border-radius:8px;padding:.55rem .7rem;min-height:64px;resize:vertical}
+.ask-pop .row{display:flex;gap:.5rem;justify-content:flex-end;margin-top:.5rem}
+/* Provenance — who raised a finding, when two independent passes ran. Deliberately quiet: it
+   qualifies the finding, it is not a second severity. */
+.prov{display:inline-block;font-size:.66rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:.12rem .45rem;border-radius:5px;border:1px solid var(--line2);color:var(--fg2);margin-top:.5rem}
+.prov-fresh{border-color:var(--info);color:var(--info)}
+.prov-both{border-color:var(--low);color:var(--low)}
+.prov-author{border-color:var(--line2);color:var(--fg3)}
+/* Two readings — the disagreement between the passes, which a merged list would destroy. */
+.tr-g{margin:.1rem 0 .9rem}
+.tr-g:last-child{margin-bottom:0}
+.tr-g b{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem}
+.tr-g b.tr-blind{color:var(--crit)}.tr-g b.tr-open{color:var(--med)}.tr-g b.tr-agree{color:var(--low)}
+.tr-g ul{margin:.35rem 0 0;padding-left:1.1rem}
+.tr-g li{margin:.2rem 0;font-size:.92rem}
+.tr-g .empty{padding:0 0 .2rem}
+.loc-plain{font-family:var(--mono);font-size:.75rem;color:var(--fg3)}
+.thread{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:.85rem 1rem;margin-bottom:.75rem}
+.thread .anchor{font-family:var(--mono);font-size:.75rem;color:var(--info);word-break:break-word}
+.thread .anchor small{color:var(--fg3)}
+.thread .ctext{margin:.4rem 0;font-size:.95rem}
+.thread .ans{margin-top:.6rem;padding:.6rem .8rem;background:rgba(104,211,145,.07);border-left:3px solid var(--low);border-radius:6px;font-size:.92rem;color:var(--fg)}
+.thread .ans b{display:block;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--low);margin-bottom:.25rem}
+.thread .ans p+p{margin-top:.45rem}
+.thread .ans code{background:var(--bg2);padding:0 .3em;border-radius:4px}
+.thread .st{font-size:.72rem;color:var(--fg3);margin-top:.3rem}
+.howto{display:flex;gap:.6rem;align-items:flex-start;background:var(--bg2);border:1px solid var(--line);border-left:3px solid var(--info);border-radius:var(--radius);padding:.55rem .8rem;margin:0 0 1rem;font-size:.82rem;color:var(--fg2);line-height:1.5}
+.howto b{color:var(--fg)}
+.howto button{flex:0 0 auto;background:none;border:0;color:var(--fg3);font-size:.9rem;cursor:pointer;padding:0 .2rem;line-height:1.5}
+.howto.hidden{display:none}
+.thread .rply{margin-top:.6rem;padding:.6rem .8rem;background:var(--bg2);border-left:3px solid var(--info);border-radius:6px;font-size:.92rem}
+.thread .rply b{display:block;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--info);margin-bottom:.25rem}
+.thread .rbox{display:flex;gap:.4rem;margin-top:.5rem}
+.thread .rin{flex:1;min-width:0;background:var(--bg2);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:.45rem .6rem;font:inherit;font-size:.88rem;resize:vertical}
+.thread .rsend{background:var(--info);color:#04121f;border:0;border-radius:6px;padding:.45rem .9rem;font-weight:700;font-size:.82rem;cursor:pointer}
+.thread .rsend:disabled{opacity:.45;cursor:default}
+.thread .st.open{color:var(--med)}
+/* views toolset */
+.chg{font-size:.62rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:.1rem .4rem;border-radius:4px;margin-left:.4rem;vertical-align:middle}
+.chg-added{background:#1f5a3a;color:#c6f6d5}.chg-modified{background:#6b4a12;color:#fefcbf}.chg-removed{background:#6b1f1f;color:#fed7d7}.chg-moved,.chg-renamed{background:#1f3f6b;color:#bee3f8}.chg-split{background:#3b2a6b;color:#e9d8fd}
+.fchip{font:inherit;font-family:var(--mono);font-size:.68rem;margin-left:.45rem;padding:.12rem .45rem;border-radius:5px;border:1px solid var(--line2);background:var(--bg);color:var(--info);cursor:pointer;vertical-align:middle;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fchip:active{border-color:var(--info)}
+.screen{background:#0b0e14;border:1px solid var(--line);border-radius:var(--radius);padding:.6rem;overflow-x:auto}
+.scr{border:1.5px solid var(--line2);border-radius:9px;padding:.5rem .6rem;margin:.4rem 0;background:rgba(255,255,255,.02)}
+.scr>.scr{margin-left:.35rem}
+.scr-added{border-color:#2f855a}.scr-modified{border-color:#b7791f}.scr-removed{border-color:#c53030;border-style:dashed;opacity:.75}.scr-moved,.scr-renamed{border-color:#3182ce}
+.scr-slot{border-style:dashed;background:rgba(99,179,237,.05)}
+.scr-h{display:flex;align-items:center;flex-wrap:wrap;gap:.15rem;font-size:.86rem;font-weight:600;color:#f7fafc}
+.scr-removed .scr-l{text-decoration:line-through;color:var(--fg2)}
+.slot{font-size:.66rem;font-weight:700;color:var(--info);letter-spacing:.06em;text-transform:uppercase;margin-right:.35rem}
+.scr-note{font-size:.8rem;color:var(--fg2);margin:.25rem 0 .1rem}
+.flow{display:flex;flex-direction:column;gap:0}
+.step{position:relative;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--line2);border-radius:10px;padding:.6rem .8rem;margin-bottom:1.1rem}
+.step::after{content:"↓";position:absolute;left:1rem;bottom:-1.05rem;color:var(--fg3);font-size:.9rem}
+.step:last-child::after{content:""}
+.step-added{border-left-color:#2f855a}.step-modified{border-left-color:#b7791f}.step-removed{border-left-color:#c53030}.step-moved{border-left-color:#3182ce}
+.st-h{display:flex;align-items:center;flex-wrap:wrap;gap:.2rem;font-weight:600;color:#f7fafc;font-size:.9rem}
+.st-n{display:inline-flex;align-items:center;justify-content:center;width:1.35rem;height:1.35rem;border-radius:50%;background:var(--bg2);border:1px solid var(--line2);font-size:.7rem;color:var(--fg2);margin-right:.35rem}
+.st-note{font-size:.82rem;color:var(--fg2);margin-top:.3rem}
+.st-then{margin:.5rem 0 0 .6rem;padding-left:.6rem;border-left:1px dashed var(--line2)}
+.st-then .step{margin-bottom:.5rem;padding:.45rem .6rem}.st-then .step::after{content:""}
+.adoption{background:#0b0e14;border:1px solid var(--line);border-radius:var(--radius);padding:.7rem}
+.ad-roots{display:flex;flex-wrap:wrap;gap:.5rem}
+.ad-root,.ad-use{border:1.5px solid var(--line2);border-radius:9px;padding:.5rem .6rem;background:rgba(255,255,255,.02);flex:1 1 220px;min-width:0}
+.ad-root{border-width:2px}
+.ad-added{border-color:#2f855a}.ad-modified{border-color:#b7791f}.ad-removed{border-color:#c53030;border-style:dashed;opacity:.8}.ad-moved{border-color:#3182ce}
+.ad-removed .scr-l{text-decoration:line-through;color:var(--fg2)}
+.ad-arrow{text-align:center;color:var(--fg3);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;padding:.5rem 0}
+.ad-uses{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.5rem}
+.sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none}
+.sheet{position:fixed;left:0;right:0;bottom:0;max-height:88vh;background:var(--bg);border-top:1px solid var(--line2);border-radius:14px 14px 0 0;z-index:51;display:none;flex-direction:column}
+.sheet.show,.sheet-bg.show{display:flex}
+@media(min-width:900px){.sheet{left:50%;right:auto;bottom:3vh;width:860px;max-height:90vh;transform:translateX(-50%);border-radius:14px;border:1px solid var(--line2)}}
+.sheet-h{display:flex;align-items:center;gap:.6rem;padding:.7rem 1rem;border-bottom:1px solid var(--line)}
+.sheet-t{flex:1;font-family:var(--mono);font-size:.8rem;color:var(--fg);word-break:break-all}
+/* `min-height:0` so the body can shrink below its content inside the `max-height`-clamped column —
+   without it a long diff pushes the sheet past the viewport instead of scrolling inside it.
+   `overscroll-behavior:contain` stops the gesture at the ends: a flick past the last line used to
+   carry on into the page BEHIND the sheet, which reads as the sheet refusing to scroll. */
+.sheet-b{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:.8rem 1rem calc(1rem + env(safe-area-inset-bottom))}
+.sheet-b>*+*{margin-top:.6rem}
+.toc{display:flex;gap:.4rem;flex-wrap:wrap;margin:.75rem 0 0}
+.toc a{font-size:.75rem;text-decoration:none;color:var(--fg2);border:1px solid var(--line);padding:.25rem .6rem;border-radius:999px}
+</style>
+</head>
+<body>
+<div class="page">
+__BODY__
+</div>
+<button class="ask-btn" id="ask-btn">💬 Ask about this</button>
+<div class="ask-pop" id="ask-pop"><div class="q" id="ask-q"></div>
+<div class="chips"><button data-q="What does this do, and how?">What does this do?</button><button data-q="Where is this used, and by whom?">Where is it used?</button><button data-q="Why was it done this way? What were the alternatives?">Why this way?</button><button data-q="Is this covered by tests? Which?">Tested?</button><button data-q="This looks wrong / risky — dig into it.">Looks off ⚑</button></div>
+<textarea id="ask-text" placeholder="Your question or comment for Claude…"></textarea>
+<div class="row"><button class="btn" id="ask-cancel">Cancel</button><button class="btn primary" id="ask-send">Send to Claude</button></div></div>
+<div class="footer"><div class="st" id="fb-status">No feedback yet</div><button class="btn" id="fb-copy">Copy JSON</button><button class="btn primary" id="fb-send">Send</button></div>
+<div class="toast" id="toast"></div>
+<script type="application/json" id="report-data">__DATA__</script>
+<script>
+(function(){
+  const R = JSON.parse(document.getElementById('report-data').textContent);
+  const KEY = 'dc-fb:' + R.report_id;
+
+  /* Collapsible sections. Keyed on the SECTION id and not on report_id, so the reader's choice to
+     keep the Conversation shut survives a re-render — the whole point, since the report is
+     re-rendered repeatedly at the same URL while findings are worked through. A section opts in by
+     rendering `<h2 class="sec-t">`; nothing else needs to know about it. */
+  const SKEY = 'dc-sec:' + R.repo;
+  let secState = {}; try { secState = JSON.parse(localStorage.getItem(SKEY) || '{}'); } catch(e) {}
+  const secOpeners = {};
+  document.querySelectorAll('section > h2.sec-t').forEach(h => {
+    const sec = h.parentElement, id = sec.id;
+    const body = h.nextElementSibling;
+    if (!body) return;
+    // A section with an explicit stored choice honours it; otherwise the render-time default (the
+    // `data-collapsed` attribute) decides, so a long conversation can arrive shut without ever
+    // overriding someone who deliberately opened it.
+    const open = id in secState ? secState[id] : h.dataset.collapsed !== '1';
+    const apply = v => {
+      h.setAttribute('aria-expanded', v ? 'true' : 'false');
+      let n = body; while (n) { n.hidden = !v; n = n.nextElementSibling; }
+    };
+    const set = v => {
+      apply(v); secState[id] = v;
+      try { localStorage.setItem(SKEY, JSON.stringify(secState)); } catch(e) {}
+    };
+    apply(open);
+    h.addEventListener('click', () => set(h.getAttribute('aria-expanded') !== 'true'));
+    secOpeners[id] = () => { if (h.getAttribute('aria-expanded') !== 'true') set(true); };
+  });
+  // Anything that adds content to a section can force it open — see `renderThread`.
+  window.dcOpenSection = id => secOpeners[id]?.();
+  const served = location.protocol.startsWith('http');
+  let fb = []; try { fb = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch(e) {}
+  // Feedback belongs to the REPORT, not to this browser. Events the server already holds are
+  // baked into the page at render time and merged in here, so a re-render — or a second device,
+  // or cleared site data — never shows a card as un-verified when someone verified it.
+  const sig = e => [e.ts, e.type, e.finding || '', e.finding_key || '', e.check || '', e.check_key || '', e.file || '', e.id || ''].join('|');
+  {
+    const seen = new Set(fb.map(sig));
+    (R.prior || []).forEach(e => { if (!seen.has(sig(e))) { seen.add(sig(e)); fb.push(Object.assign({}, e, {sent: true})); } });
+    fb.sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+  }
+  const $ = (s, r) => (r||document).querySelector(s), $$ = (s, r) => Array.from((r||document).querySelectorAll(s));
+  // Thread anchors are built with innerHTML and quote code the reader selected, so every
+  // interpolated fragment goes through this — a `<` in a diff line is content, never markup.
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const toast = m => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 1600); };
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(fb)); } catch(e) {} status(); };
+  // Everything the reader types is written to localStorage BEFORE any network call, so nothing is
+  // ever lost to a failed send. What was missing is being TOLD: the auto-send after each event ran
+  // quiet, so a failure left a muted "1 unsent" in the footer and nothing else. Silence about
+  // undelivered feedback is the one thing this footer must never do — the reader walks away
+  // believing Claude has their note.
+  const status = () => {
+    const n = fb.filter(e => !e.sent).length;
+    const bar = $('#fb-status'), btn = $('#fb-send');
+    bar.classList.toggle('bad', n > 0 && served);
+    btn.classList.toggle('danger', n > 0 && served);
+    bar.closest('.footer').classList.toggle('warn', n > 0 && served);
+    if (!fb.length) { bar.textContent = 'Tap ▲▼✕ on a finding or ⚑ on a file to teach the skill'; return; }
+    if (!n) { bar.textContent = `${fb.length} feedback event${fb.length > 1 ? 's' : ''} · all sent`; return; }
+    bar.textContent = served
+      ? `⚠ ${n} NOT SENT — saved here, but Claude has not got ${n > 1 ? 'them' : 'it'}. Tap Send.`
+      : `${fb.length} saved · opened as a file — tap Copy JSON to hand ${n > 1 ? 'them' : 'it'} over`;
+  };
+  const event = (type, finding, extra) => {
+    const e = Object.assign({ts: new Date().toISOString(), type, finding: finding||null, report_id: R.report_id, repo: R.repo, range: R.range_label}, extra||{});
+    fb.push(e); save(); if (served) send(true);
+    return e;
+  };
+  async function send(quiet){
+    const pending = fb.filter(e=>!e.sent);
+    if (!pending.length) { if(!quiet) toast('Nothing to send'); return; }
+    if (!served) { if(!quiet) toast('Opened as a file — use Copy JSON'); return; }
+    try {
+      const res = await fetch('feedback', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({events: pending})});
+      if (!res.ok) throw new Error(res.status);
+      pending.forEach(e=>e.sent=true); save(); if(!quiet) toast(`Sent ${pending.length}`);
+    } catch(err) {
+      // Loud even when the send was the automatic one — `status()` paints the footer red, and the
+      // toast fires regardless of `quiet` because a swallowed failure is the whole defect.
+      save(); toast('⚠ NOT SENT — still saved here. Tap Send, or Copy JSON.');
+    }
+  }
+  $('#fb-send').onclick = () => send(false);
+  // Retry the moment the connection or the tab comes back, so a phone that slept mid-report does
+  // not leave the reader staring at a red bar they have to clear by hand.
+  window.addEventListener('online', () => { if (served) send(true); });
+  document.addEventListener('visibilitychange', () => { if (served && !document.hidden) send(true); });
+  $('#fb-copy').onclick = async () => {
+    const txt = JSON.stringify({report_id: R.report_id, repo: R.repo, events: fb}, null, 2);
+    try { await navigator.clipboard.writeText(txt); toast('Copied — paste it into the Claude session'); }
+    catch(e) { prompt('Copy this feedback JSON', txt); }
+  };
+  // collapse / expand
+  $$('.card-h').forEach(h => h.addEventListener('click', ev => { if (ev.target.closest('button,textarea,.loc')) return; h.parentElement.classList.toggle('open'); }));
+  // copy locations
+  $$('.loc').forEach(l => l.addEventListener('click', async () => { try { await navigator.clipboard.writeText(l.dataset.loc); toast('Copied ' + l.dataset.loc); } catch(e) {} }));
+  // filters
+  const setFilter = f => {
+    $$('.filter button').forEach(b => b.classList.toggle('on', b.dataset.f === f));
+    $$('#findings .card').forEach(c => c.classList.toggle('hidden', !(f === 'all' || c.dataset.sev === f || (c.dataset.tags||'').split(' ').includes(f))));
+  };
+  $$('.filter button').forEach(b => b.onclick = () => setFilter(b.dataset.f));
+  // feedback buttons on findings
+  const applied = new Map(); fb.forEach(e => { if (e.finding && ['more','less','noise','checked'].includes(e.type)) applied.set(e.finding+':'+e.type, true); });
+  $$('.fb button[data-t]').forEach(b => {
+    const id = b.closest('.card').dataset.id, t = b.dataset.t;
+    if (applied.get(id+':'+t)) b.classList.add('on');
+    b.onclick = () => {
+      if (b.classList.contains('on')) { b.classList.remove('on'); event('undo', id, {undo: t}); return; }
+      const group = b.parentElement; if (t === 'more' || t === 'less') $$('button[data-t=more],button[data-t=less]', group).forEach(x => x.classList.remove('on'));
+      b.classList.add('on'); event(t, id, {severity: b.closest('.card').dataset.sev, tags: (b.closest('.card').dataset.tags||'').split(' ').filter(Boolean)});
+      toast({more:'Marked more important', less:'Marked less important', noise:'Marked as noise', checked:'Marked checked'}[t]);
+    };
+  });
+  // A note carries the card's CONTENT key as well as its id. The id (`M2`) is a position in a
+  // severity-sorted list — re-authoring the report hands it to a different claim, and a replay keyed
+  // on it puts the reader's note under a finding they never wrote it about. The key is what the
+  // renderer matches on; the id stays for readability and for older events.
+  $$('.fb textarea').forEach(ta => {
+    const card = ta.closest('.card');
+    const id = card.dataset.id, key = card.dataset.key;
+    ta.addEventListener('change', () => { if (ta.value.trim()) { event('note', id, {text: ta.value.trim(), finding_key: key}); toast('Note saved'); } });
+    // Replay a note this browser holds that is NEWER than the server-rendered value: the textarea is
+    // seeded at render time, so a note typed after the last render would otherwise vanish on reload
+    // and read as lost.
+    const mine = fb.filter(e => e.type === 'note' && e.finding_key === key && e.text).at(-1);
+    if (mine && mine.text !== ta.value) { ta.value = mine.text; }
+  });
+  // expand a file in "Everything else"
+  // file store: lazy code for rows + sheet for ⟨/⟩ chips
+  let STORE = {}; try { STORE = JSON.parse(document.getElementById('file-store').textContent); } catch(e) {}
+  const codeFor = f => (STORE[f] && STORE[f].html) || '<div class="empty">not in this change</div>';
+  // Every code injection below is lazy, so a line that already carries a comment has to be re-marked
+  // each time its diff is (re-)built. Assigned by the line-comment block near the end of this file;
+  // a no-op until then, so the order of the two blocks cannot break either one.
+  let afterCode = () => {};
+  $$('.unrev .row.fold-row').forEach(r => r.addEventListener('click', ev => {
+    if (ev.target.closest('button')) return; r.classList.toggle('open');
+    const body = r.nextElementSibling; const c = body && body.querySelector('.row-code');
+    if (c && !c.dataset.done) { c.innerHTML = codeFor(body.dataset.file); c.dataset.done = '1'; afterCode(c); }
+  }));
+  const sheet = $('#sheet'), sheetBg = $('#sheet-bg');
+  // Freeze the page behind the sheet. `overscroll-behavior` alone is not enough: a diff SHORTER than
+  // the sheet has no inner scroll to contain, so the gesture goes straight to the document and the
+  // reader watches the report slide about under a sheet that looks stuck.
+  // `position:fixed` rather than `overflow:hidden` — iOS Safari ignores the latter on the scrolling
+  // element, and a phone is where this was reported. The offset is restored on close, so the reader
+  // comes back to the line they opened the file from rather than to the top.
+  let lockedY = 0;
+  const lockPage = () => {
+    lockedY = window.scrollY;
+    const s = document.body.style;
+    s.position = 'fixed'; s.top = -lockedY + 'px'; s.left = '0'; s.right = '0'; s.width = '100%';
+  };
+  const unlockPage = () => {
+    const s = document.body.style;
+    if (s.position !== 'fixed') return;
+    s.position = ''; s.top = ''; s.left = ''; s.right = ''; s.width = '';
+    window.scrollTo(0, lockedY);
+  };
+  const showSheet = () => { sheet.classList.add('show'); sheetBg.classList.add('show'); lockPage(); };
+  const openSheet = f => { $('#sheet-t').textContent = f + (STORE[f] ? ' · ' + STORE[f].status : ''); $('#sheet-b').innerHTML = codeFor(f); afterCode($('#sheet-b')); showSheet(); };
+  const closeSheet = () => { sheet.classList.remove('show'); sheetBg.classList.remove('show'); unlockPage(); };
+  // Delegated on [data-open], not on a class: every file reference anywhere in the report — view
+  // chips, phase paths, the uncommitted list — opens that file's changes, and anything added later
+  // inherits it by carrying the attribute.
+  let HUNKS = {}; try { HUNKS = JSON.parse(document.getElementById('hunk-store').textContent); } catch(e) {}
+  const openHunks = (ids, label) => {
+    const html = ids.split(',').map(id => HUNKS[id] || '').join('');
+    $('#sheet-t').textContent = label + ' · folded change';
+    $('#sheet-b').innerHTML = html || '<div class="empty">this hunk was not captured</div>';
+    afterCode($('#sheet-b'));
+    showSheet();
+  };
+  document.addEventListener('click', ev => {
+    // Folded hunks win over the whole-file view: inside a fold card the reader asked about THAT
+    // change, not everything else the file happens to contain.
+    const fh = ev.target.closest('[data-open-hunks]');
+    if (fh) { ev.preventDefault(); ev.stopPropagation(); openHunks(fh.dataset.openHunks, fh.dataset.openLabel || ''); return; }
+    const c = ev.target.closest('[data-open]');
+    if (c) { ev.preventDefault(); ev.stopPropagation(); openSheet(c.dataset.open); }
+  });
+
+  // ---- How to check: verified ticks + "didn't work" notes ------------------------------------
+  // Replayed from the event log rather than kept in a second store, same as the finding buttons:
+  // one source of truth means a reload cannot disagree with what was actually reported.
+  // Keyed twice: by the card's CONTENT hash (survives a re-render, and only while the steps and
+  // expectation are unchanged) and by its V-id (legacy events, and a readable fallback). The id is
+  // positional — re-authoring can hand V7 to a different capability — so the key wins where both
+  // exist, and an edited card starts unverified because the reader verified the old wording.
+  const ckState = new Map(), ckNote = new Map(), ckKeyState = new Map(), ckKeyNote = new Map();
+  fb.forEach(e => {
+    if (e.type === 'check_verified') { if (e.check) ckState.set(e.check, true); if (e.check_key) ckKeyState.set(e.check_key, true); }
+    if (e.type === 'undo' && e.undo === 'check_verified') { if (e.check) ckState.set(e.check, false); if (e.check_key) ckKeyState.set(e.check_key, false); }
+    if (e.type === 'check_note') { if (e.check) ckNote.set(e.check, e.text || ''); if (e.check_key) ckKeyNote.set(e.check_key, e.text || ''); }
+  });
+  const ckCount = $('#ck-count');
+  const refreshCount = () => {
+    if (!ckCount) return;
+    const done = $$('.card.ck .ck-done input').filter(i => i.checked).length;
+    ckCount.textContent = done + ' of ' + ckCount.dataset.total + ' verified';
+  };
+  $$('.card.ck').forEach(card => {
+    const id = card.dataset.id, key = card.dataset.key || null;
+    const priorState = (key && ckKeyState.has(key)) ? ckKeyState.get(key) : ckState.get(id);
+    const priorNote = (key && ckKeyNote.has(key)) ? ckKeyNote.get(key) : ckNote.get(id);
+    const box = $('.ck-done input', card), ta = $('.ck-mark textarea', card);
+    if (box) {
+      box.checked = !!priorState;
+      card.classList.toggle('done', box.checked);
+      box.addEventListener('change', () => {
+        card.classList.toggle('done', box.checked);
+        if (box.checked) event('check_verified', null, {check: id, check_key: key});
+        else event('undo', null, {undo: 'check_verified', check: id, check_key: key});
+        refreshCount();
+        toast(box.checked ? id + ' marked verified' : id + ' unmarked');
+      });
+    }
+    if (ta) {
+      if (priorNote) { ta.value = priorNote; ta.classList.add('has'); }
+      ta.addEventListener('change', () => {
+        const text = ta.value.trim();
+        ta.classList.toggle('has', !!text);
+        if (text) { event('check_note', null, {check: id, check_key: key, text}); toast('Noted — Claude will see it'); }
+      });
+    }
+  });
+  refreshCount();
+  // A label in a collapsible header must not also toggle the card.
+  $$('.card.ck .ck-done').forEach(l => l.addEventListener('click', ev => ev.stopPropagation()));
+
+  // ---- How to check: curl / Postman / inline send -------------------------------------------
+  // The base URL is the reader's, not the author's: a report is read on a laptop, against a preview
+  // deploy, or through a tunnel, and a host baked in at render time is wrong for most of them.
+  let CHECKS = {}; try { CHECKS = JSON.parse(document.getElementById('check-store').textContent); } catch(e) {}
+  const baseInput = $('#base-url');
+  if (baseInput) {
+    const KEY = 'dc-base-url';
+    baseInput.value = localStorage.getItem(KEY) || 'http://localhost:3000';
+    baseInput.addEventListener('change', () => localStorage.setItem(KEY, baseInput.value.replace(/\/+$/, '')));
+    const base = () => (baseInput.value || 'http://localhost:3000').replace(/\/+$/, '');
+    const shq = s => "'" + String(s).replace(/'/g, `'\\''`) + "'";   // safe single-quoting for a shell
+    const toCurl = r => {
+      const parts = ['curl -i -X ' + r.method.toUpperCase(), shq(base() + r.path)];
+      for (const [k, v] of Object.entries(r.headers || {})) parts.push('-H ' + shq(k + ': ' + v));
+      if (r.body !== undefined && r.body !== null) {
+        if (!(r.headers && Object.keys(r.headers).some(h => h.toLowerCase() === 'content-type')))
+          parts.push("-H 'content-type: application/json'");
+        parts.push('-d ' + shq(JSON.stringify(r.body)));
+      }
+      // Session-cookie APIs are the common case here, and a curl that 401s teaches nothing.
+      parts.push("-b 'YOUR_SESSION_COOKIE'");
+      return parts.join(' \\\n  ');
+    };
+    $('#dl-postman').onclick = () => {
+      let coll = {}; try { coll = JSON.parse(document.getElementById('postman-store').textContent); } catch(e) {}
+      coll.variable = [{key: 'base', value: base()}];
+      const url = URL.createObjectURL(new Blob([JSON.stringify(coll, null, 2)], {type: 'application/json'}));
+      const a = document.createElement('a');
+      a.href = url; a.download = (coll.info && coll.info.name ? coll.info.name.replace(/[^\w.-]+/g, '-') : 'collection') + '.postman_collection.json';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+      toast('Collection downloaded — {{base}} set to ' + base());
+    };
+    $$('.ck-api').forEach(box => {
+      const r = CHECKS[box.dataset.id]; if (!r) return;
+      const out = box.querySelector('.ck-out');
+      box.querySelector('[data-act="curl"]').onclick = async () => {
+        try { await navigator.clipboard.writeText(toCurl(r)); toast('curl copied'); }
+        catch(e) { out.innerHTML = '<pre></pre>'; out.querySelector('pre').textContent = toCurl(r); }
+      };
+      box.querySelector('[data-act="send"]').onclick = async ev => {
+        const writes = !['GET','HEAD','OPTIONS'].includes(r.method.toUpperCase());
+        if (writes && !confirm(r.method.toUpperCase() + ' ' + r.path + '\n\nThis sends a real request to ' + base() + ' and can change data. Continue?')) return;
+        const btn = ev.currentTarget; btn.disabled = true;
+        const started = performance.now();
+        out.innerHTML = '<div class="st">sending…</div>';
+        try {
+          const res = await fetch(base() + r.path, {
+            method: r.method.toUpperCase(),
+            headers: Object.assign(r.body !== undefined && r.body !== null ? {'content-type': 'application/json'} : {}, r.headers || {}),
+            body: r.body !== undefined && r.body !== null ? JSON.stringify(r.body) : undefined,
+            credentials: 'include',
+          });
+          const ms = Math.round(performance.now() - started);
+          const text = await res.text();
+          let pretty = text; try { pretty = JSON.stringify(JSON.parse(text), null, 2); } catch(e) {}
+          out.innerHTML = '<div class="st ' + (res.ok ? 'ok' : 'bad') + '"></div><pre></pre>';
+          out.querySelector('.st').textContent = res.status + ' ' + res.statusText + ' · ' + ms + ' ms';
+          out.querySelector('pre').textContent = pretty.slice(0, 20000) || '(empty body)';
+          event('check_run', null, {check: box.dataset.id, status: res.status});
+        } catch (err) {
+          // A blocked cross-origin call and a dead server look identical from here — fetch reports
+          // both as an opaque TypeError — so say so rather than guessing which one it was.
+          out.innerHTML = '<div class="st bad"></div><pre></pre>';
+          out.querySelector('.st').textContent = 'request failed';
+          out.querySelector('pre').textContent = String(err) +
+            '\n\nThe browser reports a blocked cross-origin request and an unreachable server the same way.' +
+            '\nCheck the server is up at ' + base() + ', that it allows this origin (' + location.origin + '),' +
+            '\nand otherwise use “Copy as curl”, which has neither restriction.';
+        } finally { btn.disabled = false; }
+      };
+    });
+  }
+  $('#sheet-x').onclick = closeSheet; sheetBg.onclick = closeSheet; document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeSheet(); });
+  $$('.unrev .row-close button').forEach(b => b.onclick = () => { const row = b.closest('.row-body').previousElementSibling; row.classList.remove('open'); row.scrollIntoView({block: 'center'}); });
+  // Gut flags — scoped to `button[data-file]`, the ⚑ controls. `.unrev button` also matched the
+  // row's "▲ Collapse …" button, and because this loop runs AFTER the collapse wiring it replaced
+  // that handler outright: pressing Collapse silently raised a gut flag and never collapsed.
+  $$('.unrev button[data-file]').forEach(b => b.onclick = () => {
+    b.classList.toggle('on'); const on = b.classList.contains('on');
+    event(on ? 'gut_flag' : 'undo', null, on ? {file: b.dataset.file} : {undo: 'gut_flag', file: b.dataset.file});
+    toast(on ? 'Gut-flag raised — ask Claude to dig into ' + b.dataset.file : 'Gut-flag cleared');
+  });
+  // ---- Change map: a viewport, not a picture
+  //
+  // The map has no useful single size. Fitted to its container it is unreadable -- measured on the
+  // 8-1 report, a 2510px-wide graph inside an 850px box is a 3x downscale, roughly 4px type. Shown
+  // at natural size it is a horizontal scrollbar with no overview. So the canvas is a BOUNDED
+  // viewport -- its height derived per graph by fitNow(), not fixed -- and the SVG rides a
+  // transform: fit on open, then zoom about the pointer and drag to
+  // pan. Pointer Events carry mouse, pen and touch on one path, which is why pinch needs no
+  // separate touch handler.
+  // Returns whether the canvas can actually be DRIVEN -- the caller commits the UI on that, not on
+  // the mere arrival of an SVG.
+  function initMap() {
+    const box = $('#map-canvas'), stage = $('.map-stage'), svg = stage && stage.querySelector('svg');
+    if (!box || !stage || !svg) return false;
+    // The viewBox is the graph's own coordinate space and survives whatever width mermaid puts on
+    // the element; the bounding rect is the fallback for an SVG rendered without one.
+    const vb = (svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
+    const r0 = svg.getBoundingClientRect();
+    const natW = (vb.length === 4 && vb[2]) ? vb[2] : r0.width;
+    const natH = (vb.length === 4 && vb[3]) ? vb[3] : r0.height;
+    if (!natW || !natH) return false;
+    svg.style.width = natW + 'px'; svg.style.height = natH + 'px';
+    let k = 1, tx = 0, ty = 0, fit = 1, fitted = false;
+    const pct = $('#map-pct');
+    // Centre the graph while it is smaller than the box, and stop it being dragged off-screen once
+    // it is larger. Without this a pan can lose the map entirely with no way back but Fit.
+    const clamp = () => {
+      const bw = box.clientWidth, bh = box.clientHeight, w = natW * k, h = natH * k;
+      tx = w <= bw ? (bw - w) / 2 : Math.min(0, Math.max(bw - w, tx));
+      ty = h <= bh ? (bh - h) / 2 : Math.min(0, Math.max(bh - h, ty));
+    };
+    const draw = () => {
+      stage.style.transform = 'translate(' + tx.toFixed(1) + 'px,' + ty.toFixed(1) + 'px) scale(' + k.toFixed(4) + ')';
+      if (pct) pct.textContent = Math.round(k * 100) + '%';
+    };
+    // The canvas height follows the graph instead of being a fixed slab. Most maps are wide and
+    // shallow -- this one is 2069x384 -- and a fixed 520px box left two thirds of it empty while
+    // the graph sat at 41%. A deep graph still gets a bounded viewport to pan inside.
+    const MIN_H = 220, MAX_H = 520;   // keep in step with the clamp() floor/ceiling on .map
+    let lastW = 0;
+    const fitNow = () => {
+      const bw = box.clientWidth;
+      // Zero width means the box is not laid out yet; the ResizeObserver below delivers the fit
+      // when it is. NOT "a collapsed section" -- the map's <h2> carries no `sec-t`, so it is not
+      // one of the collapsible sections, and naming that as the reason would be inventing a cause.
+      if (!bw) return;
+      lastW = bw;
+      const s = Math.min(bw / natW, 1);
+      box.style.height = Math.round(Math.min(MAX_H, Math.max(MIN_H, natH * s + 12))) + 'px';
+      fit = Math.min(bw / natW, box.clientHeight / natH, 1);
+      k = fit; tx = 0; ty = 0; clamp(); draw(); fitted = true;
+    };
+    // Re-fit only when the WIDTH moved. fitNow writes the height, which re-triggers the observer;
+    // routing an unchanged width to clamp/draw is what keeps that from being a loop.
+    const onResize = () => {
+      const bw = box.clientWidth; if (!bw) return;
+      if (!fitted || bw !== lastW) fitNow(); else { clamp(); draw(); }
+    };
+    // Zoom about a point, so the graph does not slide out from under the cursor -- the difference
+    // between zooming and zooming then hunting for what you were looking at.
+    const zoomAt = (f, cx, cy) => {
+      const nk = Math.max(Math.min(fit, 1) * 0.5, Math.min(6, k * f));
+      if (Math.abs(nk - k) < 1e-6) return;
+      tx = cx - (cx - tx) * (nk / k); ty = cy - (cy - ty) * (nk / k); k = nk; clamp(); draw();
+    };
+    const atCentre = f => zoomAt(f, box.clientWidth / 2, box.clientHeight / 2);
+    box.addEventListener('wheel', e => {
+      e.preventDefault(); const r = box.getBoundingClientRect();
+      // deltaY's UNIT is deltaMode's to decide: pixels in Chrome, LINES in Firefox behind a real
+      // mouse wheel (deltaY ~3 a notch), pages at the extreme. Calibrating on pixels alone made a
+      // Firefox notch worth 0.45% where Chrome's is 16% -- some 200 notches to double the zoom, so
+      // an interaction both the hint and the aria-label advertise read as broken there.
+      const px = e.deltaMode === 1 ? e.deltaY * 16
+               : e.deltaMode === 2 ? e.deltaY * box.clientHeight
+               : e.deltaY;
+      zoomAt(Math.exp(-px * 0.0015), e.clientX - r.left, e.clientY - r.top);
+    }, {passive: false});
+    box.addEventListener('dblclick', e => {
+      const r = box.getBoundingClientRect(); zoomAt(1.6, e.clientX - r.left, e.clientY - r.top);
+    });
+    const pts = new Map(); let last = null, pinch = 0;
+    const spread = () => { const p = [...pts.values()]; return p.length < 2 ? 0 : Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); };
+    const midPt  = () => { const p = [...pts.values()]; return {x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2}; };
+    box.addEventListener('pointerdown', e => {
+      box.setPointerCapture(e.pointerId); pts.set(e.pointerId, {x: e.clientX, y: e.clientY});
+      if (pts.size === 1) { last = {x: e.clientX, y: e.clientY}; box.classList.add('grabbing'); }
+      else if (pts.size === 2) { pinch = spread(); last = null; }
+    });
+    box.addEventListener('pointermove', e => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, {x: e.clientX, y: e.clientY});
+      if (pts.size >= 2) {
+        const d = spread();
+        if (pinch && d) { const r = box.getBoundingClientRect(), c = midPt(); zoomAt(d / pinch, c.x - r.left, c.y - r.top); pinch = d; }
+        return;
+      }
+      if (last) { tx += e.clientX - last.x; ty += e.clientY - last.y; last = {x: e.clientX, y: e.clientY}; clamp(); draw(); }
+    });
+    // Lifting one finger of a pinch must re-seat the pan anchor on the finger still down, or the
+    // map jumps by the distance between the two.
+    const drop = e => {
+      pts.delete(e.pointerId);
+      // Re-baseline rather than carry the old spread across a re-pairing: with THREE pointers down,
+      // dropping one leaves spread() measuring a DIFFERENT pair, and the stale baseline would read
+      // as a one-frame zoom jump.
+      pinch = pts.size < 2 ? 0 : spread();
+      if (pts.size === 0) { last = null; box.classList.remove('grabbing'); }
+      else { const p = [...pts.values()][0]; last = {x: p.x, y: p.y}; }
+    };
+    box.addEventListener('pointerup', drop); box.addEventListener('pointercancel', drop);
+    box.addEventListener('keydown', e => {
+      const step = e.shiftKey ? 60 : 24;
+      if (e.key === '+' || e.key === '=') atCentre(1.25);
+      else if (e.key === '-' || e.key === '_') atCentre(1 / 1.25);
+      else if (e.key === '0') fitNow();
+      else if (e.key === 'ArrowLeft')  { tx += step; clamp(); draw(); }
+      else if (e.key === 'ArrowRight') { tx -= step; clamp(); draw(); }
+      else if (e.key === 'ArrowUp')    { ty += step; clamp(); draw(); }
+      else if (e.key === 'ArrowDown')  { ty -= step; clamp(); draw(); }
+      else return;
+      e.preventDefault();
+    });
+    const bi = $('#map-in'), bo = $('#map-out'), bf = $('#map-fit'), bl = $('#map-list');
+    if (bi) bi.onclick = () => atCentre(1.4);
+    if (bo) bo.onclick = () => atCentre(1 / 1.4);
+    if (bf) bf.onclick = fitNow;
+    // The map elides long file paths to keep the boxes apart; the list is where they stay in full.
+    if (bl) bl.onclick = () => {
+      const l = $('#map-fallback'); if (!l) return;
+      const hidden = l.classList.toggle('hidden');
+      bl.setAttribute('aria-expanded', String(!hidden));
+    };
+    if (window.ResizeObserver) new ResizeObserver(onResize).observe(box);
+    else addEventListener('resize', onResize);
+    fitNow();
+    return true;
+  }
+  // Called by the mermaid module below once it has run. The canvas ships `static` -- plain, auto
+  // height, no controls -- and this is the only thing that promotes it to a viewport. Nothing here
+  // runs when the CDN is unreachable, and that is the point: a page that never got its SVG keeps
+  // the behaviour it had before the canvas existed, with the text list still showing.
+  window.__dcMapReady = ok => {
+    const box = $('#map-canvas'); if (!box) return;
+    const svg = ok ? box.querySelector('svg') : null;
+    if (!svg) return;
+    // Build the stage, then commit the UI only if initMap says the canvas is drivable. The property
+    // this design sells is not "an SVG arrived" but "the viewport works", and initMap can still bail
+    // on a degenerate render. Committing ahead of it left the reader the one state the whole
+    // fail-safe exists to prevent: a clipping box with a live-looking toolbar wired to nothing and
+    // no text list underneath.
+    //
+    // Reachability, stated so the next reader does not have to re-derive it: with mermaid 11 this
+    // bail is UNREACHABLE today. It needs both legs of the size derivation to fail at once -- no
+    // usable viewBox AND a zero getBoundingClientRect -- and the rect is zero only for an unrendered
+    // box, which is the very case the viewBox leg covers. Nothing here can emit an empty graph
+    // either: mermaid() returns "" for no nodes and `if mm:` gates the block. The rollback is kept
+    // as the shape for the day that derivation changes, not as a fix for an observed state; the
+    // before/after was demonstrated by blanking the SVG inside a wrapped __dcMapReady.
+    const stage = document.createElement('div'); stage.className = 'map-stage';
+    stage.appendChild(svg);                  // the SVG is safe inside `stage` before the box is cleared
+    box.textContent = ''; box.appendChild(stage);
+    if (!initMap()) {                        // keep the diagram, drop the viewport
+      box.textContent = ''; box.appendChild(svg);
+      return;                                // `static` intact, list showing, toolbar still hidden
+    }
+    box.classList.remove('static');
+    $('#map-fallback')?.classList.add('hidden');
+    $('.map-tools')?.classList.remove('hidden');
+  };
+  // ---- Ask about a selection (comments)
+  const askBtn = $('#ask-btn'), pop = $('#ask-pop'), askText = $('#ask-text');
+  let sel = null;
+  const sectionOf = el => { const s = el && el.closest && el.closest('section'); return s ? s.id : 'header'; };
+  const findingOf = el => { const c = el && el.closest && el.closest('.card[data-id]'); return c ? c.dataset.id : null; };
+  // The content key beside the id, for the same reason notes carry it: a comment anchored to "C2"
+  // is anchored to a position, and positions get reassigned when the report is re-authored.
+  const findingKeyOf = el => { const c = el && el.closest && el.closest('.card[data-key]'); return c ? c.dataset.key : null; };
+  function onSel(){
+    const s = window.getSelection(); const t = s && s.toString().trim();
+    if (!t || t.length > 300 || s.rangeCount === 0 || pop.classList.contains('show')) { askBtn.classList.remove('show'); return; }
+    const range = s.getRangeAt(0); const node = range.commonAncestorContainer.nodeType === 1 ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
+    if (!node.closest('.page') || node.closest('textarea,input,.ask-pop')) { askBtn.classList.remove('show'); return; }
+    const ctxEl = node.closest('p,li,div,td,span') || node; const full = ctxEl.textContent || '';
+    const i = full.indexOf(t); const context = full.slice(Math.max(0, i - 90), i + t.length + 90).trim();
+    sel = { text: t, context, section: sectionOf(node), finding: findingOf(node), finding_key: findingKeyOf(node) };
+    // A selection that landed inside a diff gets the same `file:line` a gutter tap would carry, and
+    // its context is rebuilt from the code alone — `ctxEl.textContent` on a diff line would
+    // otherwise bake the gutter number into the quoted context.
+    const dl = node.closest('.diff .l[data-f]');
+    if (dl) { Object.assign(sel, lineAnchor(dl)); sel.text = t; }
+    const r = range.getBoundingClientRect();
+    // Viewport coordinates, matching the button's `position:fixed` — page coordinates put it off
+    // by the scroll offset inside the file sheet, which is where most code is read.
+    askBtn.style.top = Math.max(8, r.top - 40) + 'px'; askBtn.style.left = Math.max(8, r.left) + 'px'; askBtn.classList.add('show');
+  }
+  document.addEventListener('selectionchange', () => { clearTimeout(onSel._t); onSel._t = setTimeout(onSel, 250); });
+  askBtn.addEventListener('mousedown', ev => ev.preventDefault());
+  askBtn.onclick = () => { if (!sel) return; $('#ask-q').textContent = '“' + sel.text + '”'; askText.value = ''; pop.classList.add('show'); askBtn.classList.remove('show'); setTimeout(() => askText.focus(), 50); };
+  $$('.ask-pop .chips button').forEach(b => b.onclick = () => { askText.value = (askText.value ? askText.value + ' ' : '') + b.dataset.q; askText.focus(); });
+  $('#ask-cancel').onclick = () => pop.classList.remove('show');
+  const threadsEl = $('#threads');
+  const renderThread = c => {
+    // getElementById, NOT a selector: `c.id` is reader-supplied and splicing it into a CSS selector
+    // makes the guard bypassable — an id holding a space or a dot ("c1 x", "c1.x") builds a VALID
+    // selector that matches nothing, so the guard passes and the thread renders a second time.
+    if (!threadsEl || document.getElementById('t-' + c.id)) return;
+    const d = document.createElement('div'); d.className = 'thread'; d.id = 't-' + c.id;
+    // The location leads when there is one: a thread opened from a diff is answered by opening
+    // `path:line`, and burying that behind the quoted code makes the reader hunt for it.
+    const where = c.anchor.file ? `<span class="loc" data-loc="${esc(c.anchor.file + (c.anchor.line ? ':' + c.anchor.line : ''))}">⧉ ${esc(c.anchor.file)}${esc(c.anchor.line ? ':' + c.anchor.line : '')}</span> ` : '';
+    d.innerHTML = `<div class="anchor">${where}“${esc(c.anchor.text)}” <small>· ${esc(c.anchor.section)}${c.anchor.finding ? ' · ' + esc(c.anchor.finding) : ''}</small></div><div class="ctext"></div><div class="turns"></div><div class="st open">Waiting for Claude — ask in the session to fetch comments</div><div class="rbox"><textarea class="rin" rows="1" placeholder="Reply to this thread…"></textarea><button class="rsend" data-thread="${esc(c.id)}">Reply</button></div>`;
+    d.querySelector('.ctext').textContent = c.text; threadsEl.prepend(d); $('#threads-empty')?.classList.add('hidden');
+    d.querySelector('.loc')?.addEventListener('click', async e => { try { await navigator.clipboard.writeText(e.currentTarget.dataset.loc); toast('Copied ' + e.currentTarget.dataset.loc); } catch(err) {} });
+  };
+  $('#ask-send').onclick = () => {
+    const text = askText.value.trim(); if (!text || !sel) return;
+    const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const e = event('comment', sel.finding, { id, text, anchor: sel });
+    renderThread(e); noteCommented(sel); pop.classList.remove('show'); window.getSelection()?.removeAllRanges();
+    // A comment written into a COLLAPSED Conversation would appear to vanish — the reader's own
+    // words, swallowed by a section they shut earlier. Only on a NEW comment: doing it inside
+    // `renderThread` also fired during the replay below, which re-opened the section on every load
+    // and wrote that back as a deliberate choice, so the collapsed default could never be seen.
+    window.dcOpenSection?.('conversation');
+    toast(served ? 'Sent — ask Claude to fetch comments' : 'Saved — Copy JSON to hand it to Claude');
+  };
+  fb.filter(e => e.type === 'comment' && e.id).forEach(renderThread);
+
+  // The how-to-comment line: scaffolding for a first read, clutter once you know the page. The
+  // dismissal is remembered per report, like every other reader-set preference here.
+  (() => {
+    const el = $('#howto'), k = 'dc-howto:' + (R.report_id || 'x');
+    if (!el) return;
+    try { if (localStorage.getItem(k) === '1') el.classList.add('hidden'); } catch (e) {}
+    $('#howto-x').onclick = () => { el.classList.add('hidden'); try { localStorage.setItem(k, '1'); } catch (e) {} };
+  })();
+
+  // ---- Replying to a thread ------------------------------------------------------------------
+  // A thread is a conversation, not a question with an answer: the reader must be able to push back
+  // on what Claude said without going hunting for a sentence in the report to select. `renderReply`
+  // is idempotent by the reply's own id, because a reply already written into the page by the
+  // renderer must not be duplicated by the replay below.
+  const renderReply = e => {
+    const th = document.getElementById('t-' + e.thread); if (!th || !e.text) return;   // see renderThread
+    const rid = 'r-' + (e.rid || e.ts); if (th.querySelector('[data-rid="' + CSS.escape(rid) + '"]')) return;
+    const turns = th.querySelector('.turns'); if (!turns) return;
+    const d = document.createElement('div'); d.className = 'rply'; d.dataset.rid = rid;
+    const b = document.createElement('b'); b.textContent = 'You';
+    const pEl = document.createElement('p'); pEl.textContent = e.text;
+    d.append(b, pEl); turns.append(d);
+    // The thread is waiting on Claude again — say so where the reader is looking, and do not leave
+    // an "answered" thread silently holding an unanswered reply.
+    let st = th.querySelector('.st');
+    if (!st) { st = document.createElement('div'); st.className = 'st open'; th.querySelector('.rbox')?.before(st); }
+    st.className = 'st open'; st.textContent = 'Open — replied, waiting for Claude';
+  };
+  document.addEventListener('click', ev => {
+    const btn = ev.target.closest && ev.target.closest('.rsend'); if (!btn) return;
+    const box = btn.closest('.rbox'), ta = box && box.querySelector('.rin');
+    const text = ta ? ta.value.trim() : ''; if (!text) return;
+    const rid = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const e = event('reply', null, {rid, thread: btn.dataset.thread, text});
+    renderReply(e); ta.value = '';
+    toast(served ? 'Reply sent — ask Claude to fetch comments' : 'Reply saved — Copy JSON to hand it to Claude');
+  });
+  fb.filter(e => e.type === 'reply' && e.thread).forEach(renderReply);
+
+  // ---- Per-line comments on a code diff -------------------------------------------------------
+  // The GUTTER is the control, never the line: dragging across code is how a reader selects it, and
+  // a click target over the code would swallow that gesture and leave the older whole-selection ask
+  // unreachable inside a diff — the one place the reader most wants both.
+  const codeOf = el => Array.from(el.childNodes)
+    .filter(n => !(n.nodeType === 1 && n.classList.contains('ln')))
+    .map(n => n.textContent).join('');
+  // ±2 lines of the same hunk. A one-line quote reads as an accusation with no scene; more than
+  // five turns the thread into a diff of its own.
+  const lineAnchor = el => {
+    const sibs = Array.from(el.parentElement.children), i = sibs.indexOf(el);
+    return { file: el.dataset.f, line: Number(el.dataset.n), side: el.dataset.side,
+             hunk: el.dataset.h || null, text: codeOf(el).trim().slice(0, 300) || '(blank line)',
+             context: sibs.slice(Math.max(0, i - 2), i + 3).map(codeOf).join('\n'),
+             section: sectionOf(el), finding: findingOf(el), finding_key: findingKeyOf(el) };
+  };
+  const COMMENTED = new Set();
+  const lineKey = a => a && a.file && a.line ? a.file + ':' + a.line : null;
+  afterCode = root => {
+    if (!COMMENTED.size) return;
+    $$('.diff .l[data-f]', root).forEach(l => l.classList.toggle('has-c', COMMENTED.has(l.dataset.f + ':' + l.dataset.n)));
+  };
+  const noteCommented = a => { const k = lineKey(a); if (!k) return; COMMENTED.add(k); afterCode(document); };
+  fb.filter(e => e.type === 'comment' && e.anchor).forEach(e => { const k = lineKey(e.anchor); if (k) COMMENTED.add(k); });
+  afterCode(document);
+  const openLineAsk = el => {
+    sel = lineAnchor(el);
+    $('#ask-q').textContent = sel.file + ':' + sel.line + ' — ' + sel.text;
+    askText.value = ''; askBtn.classList.remove('show'); pop.classList.add('show');
+    setTimeout(() => askText.focus(), 50);
+  };
+  // Delegated, because most diffs are injected lazily into the sheet long after this runs.
+  document.addEventListener('click', ev => {
+    const g = ev.target.closest('.diff .ln:not(.off)'); if (!g) return;
+    // A click that ends a drag is a selection, not a tap: honour it and let the ask button appear.
+    if ((window.getSelection() || '').toString().trim()) return;
+    const l = g.closest('.l[data-f]'); if (!l) return;
+    ev.preventDefault(); ev.stopPropagation(); openLineAsk(l);
+  });
+  document.addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    const g = ev.target.closest && ev.target.closest('.diff .ln:not(.off)'); if (!g) return;
+    const l = g.closest('.l[data-f]'); if (!l) return;
+    ev.preventDefault(); openLineAsk(l);
+  });
+  // one-time view event
+  if (!sessionStorage.getItem('dc-viewed:'+R.report_id)) { sessionStorage.setItem('dc-viewed:'+R.report_id, '1'); }
+  status();
+  // mermaid (CDN; the list fallback stays visible if it cannot load)
+  const m = document.querySelector('pre.mermaid');
+  if (m) {
+    const s = document.createElement('script'); s.type = 'module';
+    s.textContent = "import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';"
+      + "mermaid.initialize({startOnLoad:false,theme:'dark',securityLevel:'loose',"
+      + "flowchart:{useMaxWidth:false,htmlLabels:true,nodeSpacing:40,rankSpacing:52,padding:12}});"
+      + "mermaid.run({querySelector:'pre.mermaid'})"
+      + ".then(()=>window.__dcMapReady&&window.__dcMapReady(true))"
+      + ".catch(()=>window.__dcMapReady&&window.__dcMapReady(false));";
+    document.body.appendChild(s);
+  }
+})();
+</script>
+</body>
+</html>

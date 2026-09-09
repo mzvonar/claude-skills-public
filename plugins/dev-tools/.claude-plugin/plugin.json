@@ -1,0 +1,9 @@
+{
+  "name": "dev-tools",
+  "description": "Everyday developer utilities: visual git diff, HTML finding reports, ngrok tunnels, codebase maps, git worktree workflow, and the upstream-first loop for updating marketplace skills.",
+  "version": "1.0.0",
+  "author": { "name": "Martin Zvonár", "url": "https://github.com/mzvonar" },
+  "homepage": "https://github.com/mzvonar/claude-skills-public",
+  "repository": "https://github.com/mzvonar/claude-skills-public",
+  "license": "MIT"
+}
