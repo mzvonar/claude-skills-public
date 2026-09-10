@@ -7,8 +7,10 @@ description: >
   bucket benchmarked and recorded in a markdown table. Use when asked to "audit the
   tests", "speed up the e2e/test suite", "find duplicate or broken tests", "why is
   CI slow", "run a test audit", or to continue a previous audit's next bucket.
-  Produces docs/test-audit-<date>.md plus one docs/test-benchmark-bucket<N>.md per
-  implemented bucket.
+  Self-configures on first run in a repo: discovers the sanctioned full-suite
+  command, flake ledger and repo constraints, confirms them with the user, and
+  writes .claude/claude-skills.json. Produces docs/test-audit-<date>.md plus one
+  docs/test-benchmark-bucket<N>.md per implemented bucket.
 ---
 
 # Test Audit — batch analysis → buckets → measured fixes
@@ -19,27 +21,59 @@ always-green/vacuous tests made honest). The method is framework-agnostic; the
 mechanics below name Playwright where a concrete command is needed — substitute the
 project's equivalents.
 
-## Configuration (optional, `.claude/claude-skills.json`)
+## Configuration & first-run setup
+
+Config lives in `.claude/claude-skills.json` under a top-level `test-audit` key.
+**On the first invocation in a repo (no `test-audit` key present), run SETUP before
+any auditing** — repo-specific commands are easy to get wrong from name alone, and a
+benchmark taken with the wrong command is worthless.
+
+### Setup procedure
+
+1. **Discover each key** (evidence, not guesses):
+   - `fullSuiteCommand` — enumerate the package.json test scripts and READ each
+     candidate's definition. The right one is the repo's *arbiter*: reproducible and
+     CI-shaped — it builds the app or targets a production server, never a
+     dev-server "reuse whatever is listening" mode. Name suffixes (`:built`, `:ci`)
+     are hints, not proof, and the arbiter is often documented only in prose — grep
+     CLAUDE.md and testing docs for "full-suite", "arbiter", "production build",
+     "reuseExistingServer" before deciding.
+   - `listCommand` — the collect-only check that proves specs parse without running
+     them (Playwright: `<pm> exec playwright test --list --reporter=line`).
+   - `typecheckCommand` — from scripts (`typecheck`, else `tsc --noEmit`).
+   - `flakeLedger` — grep docs and planning-artifact dirs for a deferred-work /
+     known-flakes / quarantine file that lists failing specs by path. If none
+     exists, leave it unset here; Phase 3 creates one from the baseline's triaged
+     failures and writes the path back.
+   - `docsDir` — where audit + benchmark docs land (default `docs`).
+   - `notes` — free-text repo facts the audit must respect, harvested from
+     CLAUDE.md / testing docs: machine-wide run locks or shared test DBs, suites CI
+     never runs, label-gated suites, seeding/identity constraints, worker-count env
+     vars, any "never do X while testing" rules.
+2. **Confirm with the user** before writing: show the discovered block and ask them
+   to correct anything ambiguous — especially `fullSuiteCommand` when several
+   candidates exist; never pick between plausible arbiters silently.
+3. **Write** the confirmed block to `.claude/claude-skills.json` (create the file if
+   absent, merge if it exists). Example result:
 
 ```json
 {
   "test-audit": {
     "fullSuiteCommand": "pnpm test:e2e:built",
+    "listCommand": "pnpm exec playwright test --list --reporter=line",
+    "typecheckCommand": "pnpm typecheck",
     "flakeLedger": "docs/known-flakes.md",
-    "docsDir": "docs"
+    "docsDir": "docs",
+    "noiseFloorPct": 8,
+    "notes": "e2e runs take a machine-wide lock (scripts/*lock*); banking suite is manual-only; realtime suite runs only on labeled PRs"
   }
 }
 ```
 
-- `fullSuiteCommand` — the sanctioned, reproducible full-suite entry point. Default:
-  detect from package.json scripts, preferring a production-build/CI-shaped script
-  (`test:e2e:built`, `test:e2e:ci`, `test:e2e`, then `test`). Benchmarks must use a
-  server/build mode that is reproducible — never a dev-server reuse mode.
-- `flakeLedger` — the file listing known pre-existing flaky/failing tests. Default:
-  grep docs and planning artifacts for a deferred-work / known-flakes / quarantine
-  file; if none exists, CREATE one during Phase 3 from the baseline's triaged
-  failures.
-- `docsDir` — where audit + benchmark docs land. Default `docs`.
+4. **Keep it current**: after the Phase 3 baseline, write the measured
+   `noiseFloorPct` back into the config. On later runs, read the config first; if a
+   configured command fails or no longer exists, re-run discovery for that key and
+   update the file, telling the user what changed.
 
 ## Non-negotiables
 
