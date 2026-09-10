@@ -1,0 +1,10 @@
+{
+  "name": "test",
+  "description": "Test-suite audit and optimization: batch analysis via subagents, bucketed findings (low-hanging fruit first), machine-local baseline, and measured bucket-by-bucket fixes with a benchmark table.",
+  "version": "1.0.0",
+  "author": { "name": "Martin Zvonár", "url": "https://github.com/mzvonar" },
+  "homepage": "https://github.com/mzvonar/claude-skills-public",
+  "repository": "https://github.com/mzvonar/claude-skills-public",
+  "license": "MIT",
+  "keywords": ["testing", "e2e", "playwright", "performance", "test-quality", "audit"]
+}

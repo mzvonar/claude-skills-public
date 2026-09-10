@@ -28,6 +28,7 @@ Or make a repo pull them in for everyone who opens it, in `.claude/settings.json
 
 | Plugin | Skills | Source |
 |---|---|---|
+| `test` | test-audit | this repo |
 | `dev-tools` | diff, html-report, ngrok, codebase-map, worktree, update-skill | this repo |
 | `workflow` | clear-context-handoff, update-guidelines, lessons, backlog, check-acs, showcase | this repo |
 | `next-js` | cache-invalidation, clean-dev | this repo |

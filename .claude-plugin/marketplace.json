@@ -10,6 +10,16 @@
   },
   "plugins": [
     {
+      "name": "test",
+      "source": "./plugins/test",
+      "version": "1.0.0",
+      "description": "Test-suite audit and optimization: batch analysis via subagents, bucketed findings (low-hanging fruit first), machine-local baseline, and measured bucket-by-bucket fixes with a benchmark table.",
+      "author": {
+        "name": "Martin Zvonár"
+      },
+      "category": "testing"
+    },
+    {
       "name": "dev-tools",
       "source": "./plugins/dev-tools",
       "version": "1.0.0",
