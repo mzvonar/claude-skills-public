@@ -859,7 +859,7 @@ bash "$S/collect-diff.sh" --check "$OUT4" | grep -q unchanged || fail "check on 
 # releases. Assert the class, not the instance.
 python3 - "$HERE/.." <<'PV' || fail "version parity"
 import json, re, sys, pathlib
-root = pathlib.Path(sys.argv[1])
+root = pathlib.Path(sys.argv[1]).resolve()
 v = (root / "skills/describe-changes/VERSION").read_text().strip()
 sk = re.search(r'^version:\s*"([^"]+)"', (root / "skills/describe-changes/SKILL.md").read_text(), re.M).group(1)
 plugin = json.loads((root / ".claude-plugin/plugin.json").read_text())
