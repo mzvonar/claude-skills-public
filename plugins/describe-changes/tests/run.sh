@@ -862,8 +862,17 @@ import json, re, sys, pathlib
 root = pathlib.Path(sys.argv[1])
 v = (root / "skills/describe-changes/VERSION").read_text().strip()
 sk = re.search(r'^version:\s*"([^"]+)"', (root / "skills/describe-changes/SKILL.md").read_text(), re.M).group(1)
-pl = json.loads((root / ".claude-plugin/plugin.json").read_text())["version"]
-mk = json.loads((root / ".claude-plugin/marketplace.json").read_text())["plugins"][0]["version"]
+plugin = json.loads((root / ".claude-plugin/plugin.json").read_text())
+pl = plugin["version"]
+# The marketplace manifest sits next to the plugin in a standalone checkout, or two levels up
+# when the plugin lives under plugins/<name>/ of a marketplace monorepo. Match the entry by name.
+for cand in (root / ".claude-plugin/marketplace.json", root.parent.parent / ".claude-plugin/marketplace.json"):
+    if cand.exists():
+        entries = json.loads(cand.read_text())["plugins"]
+        mk = next(e["version"] for e in entries if e["name"] == plugin["name"])
+        break
+else:
+    sys.exit("no marketplace.json found beside the plugin or at the marketplace root")
 assert sk == v and pl == v and mk == v, f"VERSION={v} SKILL.md={sk} plugin={pl} marketplace={mk}"
 print("version parity OK")
 PV
