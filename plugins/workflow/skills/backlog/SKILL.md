@@ -20,7 +20,7 @@ is groomed against each piece of work before that work is finalized.
 ## The problem
 
 A single append-only list works until it doesn't. Measured on one real corpus before adoption:
-**3,622 lines, 251 items, 85 sections.** Every pass over it read the whole file to answer one
+**3,622 lines, 247 items, 85 sections.** Every pass over it read the whole file to answer one
 question about a handful of items, and every concurrent branch collided on the same trailing lines.
 
 ## Zero-config defaults
@@ -89,7 +89,7 @@ node scripts/backlog.mjs docs/backlog/index.md --all    # include DONE / KILLED
 node scripts/backlog.mjs docs/backlog/index.md --json   # for tooling
 ```
 
-Frontmatter only — bodies are never read. On the corpus above that is **424 lines against 3,622**,
+Frontmatter only — bodies are never read. On the corpus above that is **390 lines against 3,622**,
 with closed items filtered rather than skimmed past. Open an item's detail file once you have
 selected it.
 
@@ -130,7 +130,42 @@ Two rules that matter more than the buckets:
   Verify against the code before promoting — an item can be silently already-done.
 - **An open item with no `trigger` cannot be classified.** It is not "keep-deferred", it is
   **untriaged**, and the fix is to give it a trigger. Expect many on first adoption: the corpus
-  above had **111 of 211** open items without one, which the monolith hid and this surfaces.
+  above had **97 of 194** open items without one, which the monolith hid and this surfaces.
+
+## Wiring grooming into a workflow
+
+Grooming only happens if something makes it happen. Whatever you wire it into — a story-creation
+hook, a PR template, a checklist, a skill listed under `orchestratorSkills` — that gate **names
+WHEN and WHERE. It never restates WHAT.**
+
+The buckets, the untriaged rule and the not-a-primary-source rule live in this file. A gate that
+copies them creates two homes for one contract, and the copy drifts silently because nothing
+type-checks prose. Measured on the first adoption: the gate restated the policy in 51 lines, and
+its copy of the untriaged count was wrong twice before anyone noticed.
+
+A gate that fits in a paragraph, and does not:
+
+```text
+Groom the backlog before scoping this work, using `/workflow:backlog`.
+READ ITS `deferred-work` POLICY AND GROOMING SECTIONS AND FOLLOW THEM: the four buckets, what
+makes an item untriaged rather than keep-deferred, and why a deferred entry is not a trustworthy
+primary source all live there, and are deliberately not repeated here.
+
+<this repo's index, read through scripts/backlog.mjs rather than by opening the file>
+
+REPORT ONLY. This pass never edits the backlog; promotions and kills are applied by whoever
+scopes the work, after the gate.
+```
+
+Keep in the gate only what is genuinely the *workflow's* and not the backlog's — that report-only
+division of labour, and any repo-local rule about where an agent may write. Everything else is a
+pointer.
+
+**Then guard it, because its failure is silent.** A gate that is deleted, emptied, renamed, or given
+a syntax error does not fail loudly — grooming simply stops happening and the backlog rots with
+nothing to notice. On the first adoption the predecessor's own tooling *promised* a fallback gate
+and never checked it, so the promise pointed at an empty list for months. Whatever holds your gate,
+assert that it still resolves to a live step, and that it still points here.
 
 ## Grooming
 
@@ -257,17 +292,24 @@ pass knows to expect their shape. That is why the index keeps its path and stays
 **hand-maintained rather than generated**: a generated index would silently eat those appends on
 the next regeneration.
 
-A typical appended entry:
+Appends come in two shapes, and which one a repo gets depends on the generator and its installed
+version — **check what the repo actually runs, do not assume the newest:**
 
 ```markdown
-- source_spec: `<spec>`
-  summary: <one sentence>
-  evidence: <why this is real>
+keyed   - source_spec: `<spec>`        bare   - <one bullet per finding, with description>
+          summary: <one sentence>
+          evidence: <why this is real>
 ```
 
-Such an entry has no detail file, so no `status` and no `trigger`. Treat it as **open and
-untriaged**; grooming promotes it into a detail file. `scripts/validate.mjs` counts them as
-`UNPROMOTED_APPENDS`.
+Either shape has no detail file, so no `status` and no `trigger`. Treat it as **open and
+untriaged**; grooming promotes it into a detail file. `scripts/validate.mjs` reports both
+(`UNPROMOTED_APPENDS` for the keyed shape, `RAW_APPEND` for the bare one) — it keyed only on the
+keyed shape until a repo running a bare-bullet generator showed that an append could land in the
+index with nothing reporting it at all.
+
+The closed vocabulary (`DONE`, `KILLED`, `CLOSED`, `SUPERSEDED`, `RETIRED`, `RESOLVED`) is shared
+by `backlog.mjs`, `validate.mjs`, `verify-migration.mjs` and `migrate.py`. It is corpus data: if
+your ledger retires items with another word, add it to all four, or those items read as open.
 
 ### Generator conventions (optional)
 
@@ -292,21 +334,36 @@ classified independently.
 
 ## Adopting it
 
+Migrate to a **scratch directory**, prove nothing was lost, then move it into place at `indexPath`.
+The source is the only copy of the thing you are checking against, so never migrate over it.
+
 ```bash
-python3 scripts/migrate.py <old-monolith.md> <output-dir>                 # index.md + index/
-python3 scripts/migrate.py <old-monolith.md> <output-dir> --index-name deferred-work.md
-node scripts/validate.mjs <output-dir>/index.md                          # structure, pointers, policy
+LEDGER=<old-monolith.md>; OUT=$(mktemp -d)
+
+python3 scripts/migrate.py "$LEDGER" "$OUT"            # index.md + index/
+node scripts/verify-migration.mjs "$LEDGER" "$OUT"     # ← the gate. non-zero = do not commit
+node scripts/validate.mjs "$OUT/index.md"              # structure, pointers, policy
 ```
 
-`migrate.py` is **lossless by construction** — every item's original block is written verbatim into
+Pass `--index-name <name>.md` to `migrate.py` and `verify-migration.mjs` to keep the name a
+generator already appends to (the detail directory takes the stem).
+
+`migrate.py` is **lossless for items by construction** — every item's block is written verbatim into
 its detail file, and frontmatter is derived from that block, never invented. A field the source does
-not state is emitted empty and counted, so gaps are visible rather than guessed. It writes
-`policy: deferred-work` into the index; delete that line to run a plain backlog. Pass `--index-name`
-to keep the name a generator already appends to.
+not state is emitted empty and counted, so gaps are visible rather than guessed. It also prints what
+it refuses to decide: untriaged items, sections with no bullets, and open items under a retired
+heading. Each of those lines is a task, not a statistic. It writes `policy: deferred-work` into the
+index; delete that line to run a plain backlog.
 
-**Check the migration against an independent count before committing it.** Adoption is the one
-moment the old format's inconsistencies must be parsed, and they are worse than they look — see
-`reference/migration-traps.md` for the three that corrupted this migrator before they were found.
+`verify-migration.mjs` asks the two questions the counts cannot. **Did all of the source's content
+reach the output?** — every item body verbatim and whole, and every other non-blank line by a
+trimmed match, which is content-level rather than byte-level: re-indentation is not loss. On the
+one measured corpus the bodies read a clean 251/251 while 23 section intros and one whole item
+were on the floor. **Does a second extractor agree on WHICH items are closed?** — the two disagreed
+44 against 40, and diffing them as *sets* rather than sizes is what turned a plausible near-match
+into four named items.
 
----
-To change this skill, do not edit this copy: use `/dev-tools:update-skill`, or see `docs/updating-skills.md` in `mzvonar/claude-skills-public`.
+Both of those fired on the first real adoption. **`reference/adopting.md` is the runbook** — the
+order, what to do with each reported count, and the two decisions to make explicitly.
+`reference/migration-traps.md` is why: ten silent corruptions, each live against one real ledger —
+including one the gate itself could not see, because both extractors were missing the same word.

@@ -87,6 +87,28 @@ describe("scanBacklog", () => {
       writeFileSync(path.join(d, INDEX_NAME),
         INDEX + "- source_spec: `spec-9.md`\n  summary: appended by a tool\n  evidence: why\n"),
       ["UNPROMOTED_APPENDS"]],
+    // A file name appearing in PROSE is not a pointer. `indexText.includes(name)` accepted one, so
+    // an unreferenced detail file read as indexed — invisible to the classifier and reported clean.
+    ["a detail file mentioned only in prose, never pointed at", (d) => {
+      writeFileSync(path.join(d, STEM, "dw-003-orphan.md"),
+        "---\nid: dw-003\nsummary: 'Orphan.'\ntrigger: 'someday'\nstatus: open\n---\n- **Orphan.**\n");
+      writeFileSync(path.join(d, INDEX_NAME),
+        INDEX + `\nSee also \`${STEM}/dw-003-orphan.md\`, which nothing points at.\n`);
+    }, ["UNINDEXED"]],
+    // Two entries pointing at one file. The expected set is DUPLICATE_POINTER *alone*, and that is
+    // the whole finding: three entries and three pointers stay balanced, so the count-based
+    // UNPROMOTED_APPENDS check sees nothing while one entry has no detail file of its own. Written
+    // expecting both, corrected by running it — the count is exactly what cannot notice this.
+    ["two index entries pointing at the same detail file", (d) =>
+      writeFileSync(path.join(d, INDEX_NAME),
+        `${INDEX}- id: dw-777\n  summary: a duplicate pointer\n  detail: \`${STEM}/dw-001-a.md\`\n`),
+      ["DUPLICATE_POINTER"]],
+    // The OTHER append shape: a generator that writes one bare bullet per finding, no key at all.
+    // Keying only on `source_spec:` was blind to it — an append could land with NOTHING reporting.
+    ["a bare-bullet generator append, the older shape with no key", (d) =>
+      writeFileSync(path.join(d, INDEX_NAME),
+        INDEX + "- Guard the corrupt-enum read path — pre-existing, deferred.\n"),
+      ["RAW_APPEND"]],
   ];
 
   for (const [name, mutate, expected] of offenders) {
