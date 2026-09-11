@@ -90,12 +90,25 @@ benchmark taken with the wrong command is worthless.
   carrying the measured delta.
 - If the project serializes test runs machine-wide (a lock script, a shared test
   DB), respect it — never run two suites concurrently.
+- **A measuring run owns the whole box, not just the lock.** While a benchmark or
+  validation run is in flight the orchestrator runs nothing heavy (no typecheck,
+  lint, or unit tests) and write-subagents stay paused — their verification
+  commands starve the app server under test. The saturation signature: several
+  tests failing on seed/API-POST or `goto` timeouts in files the diff never
+  touched ⇒ the run is INVALID — mark it so, rerun on a quiet box, and never
+  triage those timeouts as regressions.
+- **Read result counters by grepping the whole log — any run, always, not just the
+  monitored ones.** Playwright prints the failure line FIRST in its summary, so any
+  `| tail`/fixed-window read shows only `skipped/passed` and a red run reads green.
 
 ## Phase 0 — Recon (orchestrator)
 
 1. Inventory: spec files, tests per file, line counts, every test config, and which
    suites CI actually runs (grep the CI workflows) — a suite no workflow invokes is
-   itself a finding (it rots silently).
+   itself a finding (it rots silently), and its first hand-run becomes its own
+   bucket row with a triage + repair + re-run budget: stale copy drift and racy
+   asserts are near-certain, and Phase 5's first-execution rule applies to the
+   whole suite, not just new tests.
 2. Serialization map: every `workers: 1` / `fullyParallel` (or equivalent) with the
    comment justifying it. Shared-identity caps — parallel tests racing a
    unique-constraint upsert on one seeded user/row — are usually the biggest
@@ -150,6 +163,10 @@ Write `<docsDir>/test-audit-<date>.md` with buckets in THIS order:
 4. **Broken tests** — correctness at ~0 runtime cost, grouped: always-pass /
    dead-stale / order-coupled / misleading.
 5. **Wrong tier / policy** — tests that belong in unit/component tier; naming.
+
+Cite each finding as file:line PLUS a short quoted anchor — line numbers are
+as-of-audit and drift as earlier buckets land, so executors locate by content,
+never by line alone.
 
 Include a **"What NOT to touch"** list: deliberate anti-flake seams the agents
 verified (bounded error swallows with rationale, sampling loops that exit into hard
@@ -207,7 +224,10 @@ asserts, load-bearing reloads) — so later passes don't "optimize" them away.
   a delta smaller than the noise floor is reported as "within noise", never spun.
   When a bucket de-serializes, add a run at a higher worker count: flat-at-default
   plus faster-at-width is the honest signature that the caps (not the tests) were
-  the constraint.
+  the constraint. A worker bump that measures WORSE (saturation flake for seconds
+  saved) is a result, not a failure: revert it and write the measurement into the
+  config comment beside the cap — otherwise the next audit re-flags the cap as
+  vestigial and re-runs the experiment.
 - Write `<docsDir>/test-benchmark-bucket<N>.md`: a results table
   (run | tree | workers | suite | wall | pass/fail/skip | collected), a failure-set
   validity paragraph mapping each failure to its ledger entry, an honest "reading"
@@ -218,7 +238,12 @@ asserts, load-bearing reloads) — so later passes don't "optimize" them away.
   send the failure output plus the framework's error-context snapshots back to the
   SAME agent (it holds the context) — and a re-run before the bucket is done.
   A documented `test.fixme` with a tracked reason is the fallback only after repair
-  is exhausted.
+  is exhausted. And when the failure is the PRODUCT's, not the test's — the new
+  assert is simply the first thing ever to look (an accessibility scan finding real
+  contrast violations, a policy check finding real drift) — file the finding to the
+  flake ledger / deferred-work with an ID, exclude the SPECIFIC failing rule or
+  assert (never the whole test), keep everything else strict, and point the test's
+  title or comment at the ID so re-enabling is findable when the product fix lands.
 
 ## Recurring mechanisms worth checking in any audit
 
@@ -232,3 +257,18 @@ asserts, load-bearing reloads) — so later passes don't "optimize" them away.
 - Cron/idempotency tests need a run-#2 COMPLETION signal (a sentinel entity whose
   state must change) before the stability assert — otherwise the poll passes
   instantly and a duplicating re-run stays green.
+- Asserts on a TRANSIENT intermediate UI state (a resolved-fade before a queue
+  eviction, a spinner before a redirect) are races — a server refresh can evict the
+  state before the expect ever observes it, and with a single-item queue the
+  transient state may be unobservable outright. Assert the durable outcome with an
+  either/or poll (resolved OR evicted, never stuck pending), bounded to the
+  stack's real latency, not the optimistic one.
+- Whole-page scans (axe, screenshot diffs) assert whatever has STREAMED IN so far —
+  under streamed metadata a scan can beat the `<title>` into the document and fail
+  on a phantom violation. Gate every scan on a render signal (title, heading,
+  testid) before running it.
+- A suite "blocked on unhealthy infra" is a claim to verify, not a fact: read what
+  the container's healthcheck actually tests (a stale check can 401 on a now
+  auth-gated ping while the service answers in under a millisecond) and what the
+  dependents actually require (`service_started` vs healthy) before writing the
+  suite off — then just try the sanctioned run command.
