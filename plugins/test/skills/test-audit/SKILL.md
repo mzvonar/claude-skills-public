@@ -256,7 +256,12 @@ asserts, load-bearing reloads) — so later passes don't "optimize" them away.
   red — read the product code first and assert what the action durably writes.
 - Cron/idempotency tests need a run-#2 COMPLETION signal (a sentinel entity whose
   state must change) before the stability assert — otherwise the poll passes
-  instantly and a duplicating re-run stays green.
+  instantly and a duplicating re-run stays green. And an EXCLUSION filter (a
+  dismissed/opted-out entity must not be processed) is provable only when the
+  excluding state change happens BEFORE the first emission: a stable-count assert
+  after an initial emission is equally explained by a dedup guard, so it cannot
+  fail for the filter's absence — restructure to exclude-first, run once, assert
+  ZERO.
 - Asserts on a TRANSIENT intermediate UI state (a resolved-fade before a queue
   eviction, a spinner before a redirect) are races — a server refresh can evict the
   state before the expect ever observes it, and with a single-item queue the
