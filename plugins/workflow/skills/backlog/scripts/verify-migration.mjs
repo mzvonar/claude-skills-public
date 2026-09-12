@@ -91,9 +91,22 @@ for (const [k, a] of secStarts.entries()) {
   const b = secStarts[k + 1] ?? lines.length;
   const body = lines.slice(a + 1, b);
   const bullets = body.map((l, i) => (/^- /u.test(l) ? i : -1)).filter((i) => i >= 0);
-  sections.push({ head: lines[a], line: a + 1, hasItems: bullets.length > 0 });
-
   const subs = body.map((l, i) => (l.startsWith("### ") ? i : -1)).filter((i) => i >= 0);
+
+  // A record need not contain a bullet — migrate.py folds a bulletless section into one item per
+  // `### ` run, or into a single item when it has no sub-headings. This side MUST fold identically:
+  // when migrate.py learned to fold `### `-field records and this did not, the two counted 247
+  // against 251 and every position after the first fold was off by one, burying the real findings
+  // under 67 spurious ones. A differential check whose sides disagree about what an ITEM is
+  // compares nothing.
+  const bulletlessUnits =
+    bullets.length > 0
+      ? []
+      : subs.length > 0
+        ? subs.map((s) => ({ start: s, e: subs.find((x) => x > s) ?? body.length }))
+        : [{ start: 0, e: body.length }];
+  sections.push({ head: lines[a], line: a + 1, hasItems: bullets.length > 0 || bulletlessUnits.length > 0 });
+
   const folded = new Map();
   for (const si of subs) {
     const end = subs.find((x) => x > si) ?? body.length;
@@ -104,17 +117,30 @@ for (const [k, a] of secStarts.entries()) {
     }
   }
 
+  for (const u of bulletlessUnits) {
+    const block = body.slice(u.start, u.e).join("\n").replace(/\s+$/u, "");
+    // When the whole section is the record, its OWN TEXT is the `## ` heading — which sits outside
+    // the block, because migrate.py writes the body verbatim and the heading separately. Without
+    // this override the two sides read different zones and disagree on status for every such
+    // record: three on the corpus that motivated the fold, each a real closure read as open. (A
+    // `### ` unit needs no override; its block already starts at the heading.)
+    const own = u.start === 0 && subs.length === 0 ? lines[a] : undefined;
+    if (block.trim()) items.push({ block, own, isRecord: true, line: a + 2 + u.start, sec: sections.length - 1 });
+  }
+
   for (const [j, s] of bullets.entries()) {
     let start = s;
     let e = bullets[j + 1] ?? body.length;
+    let isRecord = false;
     if (folded.has(s)) {
       const rec = folded.get(s);
       if (rec === null) continue;                      // a field absorbed into the record above
+      isRecord = true;
       start = rec.si;
       e = rec.end;
     }
     const block = body.slice(start, e).join("\n").replace(/\s+$/u, "");
-    if (block.trim()) items.push({ block, line: a + 2 + start, sec: sections.length - 1 });
+    if (block.trim()) items.push({ block, isRecord, line: a + 2 + start, sec: sections.length - 1 });
   }
 }
 
@@ -175,6 +201,7 @@ for (const [sec, ls] of uncovered) {
 // shipped `open` past a green gate: both sides knew only DONE|KILLED. Hence UNKNOWN_MARKER below —
 // it reports marker-shaped words neither side claims, which is the only signal a vocabulary gap has.
 const CLOSED = /\*\*\s*(?:[^\w\s]\s*)?(?:DONE|KILLED|CLOSED|SUPERSEDED|RETIRED|RESOLVED)\b/u;
+const HEADING_CLOSED = /(?:^|[—–\-|(]\s*)(DONE|KILLED|CLOSED|SUPERSEDED|RETIRED|RESOLVED)\b/u;
 const HEDGE = /(HALF|NOT|MOSTLY|PARTLY|PARTIALLY|NEARLY)\s*$/iu;
 const STRUCK = /^-\s+~~/u;
 
@@ -193,11 +220,18 @@ details.forEach((d, i) => { if (d.status && d.status !== "open") theirs.add(i + 
 
 const mine = new Set();
 items.forEach((it, i) => {
-  const flat = ownText(it.block);
+  const flat = ownText(it.own ?? it.block);
   if (STRUCK.test(flat)) { mine.add(i + 1); return; }
   const bare = flat.replace(/`[^`]*`/gu, " ");
   const m = CLOSED.exec(bare);
-  if (m && !HEDGE.test(bare.slice(0, m.index + 2).replace(/\*\*/gu, " "))) mine.add(i + 1);
+  if (m && !HEDGE.test(bare.slice(0, m.index + 2).replace(/\*\*/gu, " "))) { mine.add(i + 1); return; }
+  // A RECORD's own text is a heading, and a heading is already emphasised — so its author has no
+  // reason to bold the marker, and every pattern above needs a `**`. Anchored to the heading's
+  // start or the position after a separator, exactly as migrate.py's HEADING_MARK is: when a
+  // definition changes, the question is not "did I fix it" but "who else holds a copy".
+  if (!it.isRecord) return;
+  const h = HEADING_CLOSED.exec(bare.replace(/^#+\s*/u, ""));
+  if (h && !HEDGE.test(bare.slice(0, h.index + h[0].length - h[1].length))) mine.add(i + 1);
 });
 
 // Diffed as SETS. Comparing sizes is what let a 4-item disagreement read as agreement.

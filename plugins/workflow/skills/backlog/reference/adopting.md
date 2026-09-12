@@ -57,16 +57,23 @@ any bucket. It is not "keep-deferred", it is **untriaged**.
 reads as a decision someone made. Give them triggers incrementally, a few per grooming pass, when
 the surrounding work makes the real trigger obvious. Adoption is not the moment to triage 97 items.
 
-### `sections with NO bullet items: N`
+### `records with NO bullet at all, folded from their heading: N`
 
-A `## ` section holding prose but no top-level bullet — on the real corpus, a `### ` heading with
-**Trigger / What / Why / Owner** paragraphs, which is an item by every meaning except this
-migrator's. Its content is kept in the index so nothing is lost, but it is **invisible to
-`backlog.mjs`**, which reads detail frontmatter.
+A `## ` section holding prose but no top-level bullet is a record whose heading is its own text —
+on the first corpus, a `### ` heading with **Trigger / What / Why / Owner** paragraphs, an item by
+every meaning except an item-driven walk's. These are folded: one item per `### ` run, or the whole
+section as one item where it has no sub-headings.
 
-Promote each one by hand into a proper detail file, then replace the section's prose in the index
-with the item's entry. Notably the one found was the *newest* entry in the ledger — the shape a
-ledger drifts toward is the shape the migrator is least likely to model.
+Nothing to do, but read the number, because it says how much of your ledger is written this way.
+On the second corpus it was **147 of 695 items across 108 of 219 sections**, holding 72 of the
+ledger's 154 cross-referenced ids. An earlier revision kept their prose in the index for a person to
+promote by hand: adequate for the one the first corpus had, not a remedy at 108, and invisible to
+`backlog.mjs` in both cases, because prose in the index carries no frontmatter.
+
+### `sections with NO content at all: N`
+
+A heading with nothing under it. Nothing to promote; check it is a grouping heading and not an item
+whose body never got written.
 
 ### `open items under a RETIRED/DONE section heading: N`
 
@@ -74,17 +81,23 @@ The section heading carries a status its items do not. **The migrator reports th
 applies them**, deliberately: a retired section usually means its items are done, but a DONE
 section can hold one live item and only a person can tell which.
 
-Read the section's banner and decide per item. On the real corpus there was one, under a heading
+Read the section's banner and decide per item. On the first corpus there was one, under a heading
 reading *"all five seams are closed … do not action"* — it had migrated as live work, which is
-exactly what that banner existed to prevent. Write the `status` in the vocabulary the readers share
-(`CLOSED` in `backlog.mjs` / `validate.mjs` / `verify-migration.mjs`) — a word outside it reads as
-open however final it sounds, which is trap 8 in miniature.
+exactly what that banner existed to prevent. On the second there were twelve, under three headings
+whose closure was written **unbolded** (`## ~~Cache-coherence …~~ — RESOLVED (2026-05-09)`); until
+the section check learned that spelling, all twelve read as live work with nothing printed. Write
+the `status` in the vocabulary the readers share (`CLOSED` in `backlog.mjs` / `validate.mjs` /
+`verify-migration.mjs`) — a word outside it reads as open however final it sounds, which is trap 8
+in miniature.
 
 ### `status inferred/ambiguous: N`
 
-Two shapes, both recorded as `<WORD> (date unknown)` and both worth a minute: a struck-through item,
-and a closure whose parenthetical is not a date or is absent (`**SUPERSEDED the same day — FIXED
-upstream at 2c8bf973.**`). Fix the ones you can date. Six on the real corpus.
+Three shapes, each recorded and each worth a minute: a struck-through item; a closure whose
+parenthetical is not a date or is absent (`**SUPERSEDED the same day — FIXED upstream at
+2c8bf973.**`), recorded as `<WORD> (date unknown)`; and a closure stated **unbolded inside a
+record's heading** (`## RESOLVED in 8.3 (pre-existing test-rot) — …`), which is applied but is an
+inference, because a heading is already emphasised and its author had no reason to bold anything.
+Fix the ones you can date. Six on the first corpus, twenty-four on the second.
 
 ---
 

@@ -197,15 +197,25 @@ describe("migrate.py — what is not an item", () => {
     }
   });
 
-  it("keeps a section that has no bullet items at all, and says so", () => {
-    // The newest entry on the real corpus has this shape — a heading with Trigger/What paragraphs
+  it("folds a section with no bullets at all into a real record, trigger and all", () => {
+    // The newest entry on the first corpus had this shape — a heading with Trigger/What paragraphs
     // and no bullet anywhere. An item-driven walk drops the whole section and reports 0 items lost.
-    const { dir, stdout } = migrate(SECTIONS);
+    // Keeping its prose in the index was the first fix and is not enough: prose in the index has no
+    // frontmatter, so `backlog.mjs` cannot see it. On the second corpus HALF the ledger was this
+    // shape, holding 72 of its 154 cross-referenced ids. The record must reach a DETAIL FILE,
+    // carrying the trigger it states.
+    const { dir, files, stdout } = migrate(SECTIONS);
     try {
       const index = readFileSync(path.join(dir, "out", "index.md"), "utf-8");
-      assert.ok(index.includes("Delete the shim when both consumer tiers land"), "bulletless section dropped");
-      assert.ok(index.includes("**Trigger:** both downstream tiers are merged."), "its trigger is gone");
-      assert.match(stdout, /sections with NO bullet items: 1/u);
+      assert.ok(index.includes("Delete the shim when both consumer tiers land"), "bulletless record dropped");
+      const detail = files
+        .map((f) => readFileSync(path.join(dir, "out", "index", f), "utf-8"))
+        .find((t) => t.includes("Delete the shim when both consumer tiers land"));
+      assert.ok(detail, `the bulletless record reached no detail file:\n${files.join("\n")}`);
+      assert.match(detail, /^summary: 'Delete the shim when both consumer tiers land'$/mu);
+      assert.match(detail, /^trigger: 'both downstream tiers are merged\.'$/mu);
+      assert.ok(detail.includes("**What:** delete the shim"), "the record's body is not verbatim");
+      assert.match(stdout, /records with NO bullet at all, folded from their heading: 1/u);
     } finally {
       rmSync(dir, { force: true, recursive: true });
     }
@@ -214,10 +224,89 @@ describe("migrate.py — what is not an item", () => {
   it("reports an open item under a retired heading — and does NOT retire it", () => {
     // Report, never apply. A retired section usually means its items are done, but a DONE section
     // can hold one live item and only a person can tell which. Silently inheriting would decide it.
+    // Three open items now: the one under the retired heading, the ordinary one, and the folded
+    // bulletless record above — open because nothing in it says otherwise.
     const { dir, status, stdout } = migrate(SECTIONS);
     try {
       assert.match(stdout, /open items under a RETIRED\/DONE section heading: 1/u);
+      assert.equal(status.filter((s) => s === "open").length, 3, `got ${JSON.stringify(status)}`);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("reads a closure stated UNBOLDED in a record's heading, and says it inferred it", () => {
+    // A heading is already emphasised, so an author has no reason to bold the marker inside it —
+    // and every other pattern needs a `**`. Live on the second corpus: `## RESOLVED in 8.3 …`
+    // migrated open. Only reachable once headings became records; widening a scope opens a
+    // boundary. Structurally anchored, so a heading that merely MENTIONS the word stays open.
+    const HEADINGS = `# Deferred work
+
+## RESOLVED in 8.3 (pre-existing test-rot, fixed at user direction) — stale locators (2026-06-17)
+
+The specs were repaired at user direction while the story was open.
+
+## Story 1.10 spike — RESOLVED (2026-04-28)
+
+What the spike found.
+
+## Make the RESOLVED badge green
+
+An ordinary open item whose heading only mentions the word.
+`;
+    const { dir, files, status } = migrate(HEADINGS);
+    try {
+      const byName = Object.fromEntries(
+        files.map((f) => [f, readFileSync(path.join(dir, "out", "index", f), "utf-8")]),
+      );
+      const of = (needle) => Object.entries(byName).find(([, t]) => t.includes(needle))?.[1] ?? "";
+      assert.match(of("stale locators"), /^status: RESOLVED \(2026-06-17\)$/mu);
+      assert.match(of("What the spike found"), /^status: RESOLVED \(2026-04-28\)$/mu);
+      assert.match(of("An ordinary open item"), /^status: open$/mu, "a mere mention must not close");
+      assert.equal(status.filter((s) => s === "open").length, 1, `got ${JSON.stringify(status)}`);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("reports a bullet whose closure lives UNBOLDED on the section heading above it", () => {
+    // The report is the only signal such a bullet has: its own text says nothing, so it migrates
+    // open and nothing prints. On the second corpus that was 18 items under three retired headings.
+    const UNBOLDED_SECTION = `# Deferred work
+
+## ~~Cache-coherence: reads on a short cache life~~ — RESOLVED (2026-05-09)
+
+- **Root cause.** The helper used the stale-while-revalidate variant.
+- **The fix.** Three wrappers, one per calling context.
+`;
+    const { dir, status, stdout } = migrate(UNBOLDED_SECTION);
+    try {
+      assert.match(stdout, /open items under a RETIRED\/DONE section heading: 2/u);
+      // Reported, never applied — the heading's status is not inherited by its bullets.
       assert.equal(status.filter((s) => s === "open").length, 2, `got ${JSON.stringify(status)}`);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("does not report a bulletless record against its OWN heading", () => {
+    // A bulletless section IS its own item, so the section mark and the item's own status are the
+    // same text. Reporting it asks a person to adjudicate a heading against itself — and where half
+    // the sections are this shape, that report is pure noise drowning the real ones.
+    const RETIRED_BULLETLESS = `# Deferred work
+
+## A bulletless record whose heading is retired — **RETIRED (2026-09-03)**
+
+**Trigger:** never; kept for provenance.
+`;
+    const { dir, status, stdout } = migrate(RETIRED_BULLETLESS);
+    try {
+      assert.equal(status.length, 1, `got ${JSON.stringify(status)}`);
+      assert.match(status[0], /^RETIRED \(2026-09-03\)$/u);
+      assert.ok(
+        !/open items under a RETIRED\/DONE section heading/u.test(stdout),
+        `self-referential section report:\n${stdout}`,
+      );
     } finally {
       rmSync(dir, { force: true, recursive: true });
     }

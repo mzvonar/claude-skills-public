@@ -50,6 +50,15 @@ HEDGE = re.compile(r'(HALF|NOT|MOSTLY|PARTLY|PARTIALLY|NEARLY)\s*$', re.I)
 # neither reaches a detail file, and dropping them is silent.
 SECTION_MARK = re.compile(r'\*\*\s*(?:[^\w\s]\s*)?(' + CLOSED_WORDS + r')\b')
 
+# A record whose own text is a HEADING states its status in PLAIN TEXT — a heading is already
+# emphasised, so an author has no reason to bold the marker inside it. Every pattern above needs a
+# `**`, so `## RESOLVED in 8.3 (pre-existing test-rot) — …` migrates open. This only became
+# reachable when headings became records: widening a scope opens a boundary, which is the corollary
+# traps 4→5 bought. Restricted structurally to the heading's start or the position after a
+# separator, so a heading that merely MENTIONS the word ("Make the RESOLVED badge green") cannot
+# match, and reported as inferred rather than applied silently.
+HEADING_MARK = re.compile(r'(?:^|[—–\-|(]\s*)(' + CLOSED_WORDS + r')\b')
+
 # A `### ` heading can be a RECORD, not a grouping: the heading names the item and the bullets under
 # it are its FIELDS. On the first real corpus all five were this shape, and reading each field as a
 # separate item split four records into eight — with a degenerate summary apiece (`What`, `Trigger`)
@@ -72,17 +81,45 @@ def yaml_single(s):
     return "'" + " ".join(str(s).split()).replace("'", "''") + "'"
 
 items, no_trigger, closed_n, ambiguous, sections, section_open = [], 0, 0, [], [], []
-records = 0
+records, bulletless = 0, 0
 for a, b in zip(secs, secs[1:] + [len(lines)]):
     head = lines[a][3:].strip()
     body = lines[a+1:b]
     idx = [i for i, l in enumerate(body) if re.match(r'^- ', l)]
-    intro = "\n".join(body[:idx[0]] if idx else body).strip()
-    sections.append(dict(head=head, intro=intro, has_items=bool(idx)))
-    sm = SECTION_MARK.search(head)
+    subs = [i for i, l in enumerate(body) if l.startswith("### ")]
+
+    # A RECORD NEED NOT CONTAIN A BULLET. Trap 7 found one such section on the first corpus and kept
+    # its prose in the index for a person to promote. On the second, HALF the ledger was this shape
+    # — 108 of 219 sections, holding 72 of its 154 cross-referenced ids — and at that scale "promote
+    # by hand" stops being a remedy and becomes the migration. So fold it, under the contract
+    # `### `-field records already use: the heading is the record's own text, and the summary and
+    # status come from there. A bulletless section whose sub-headings carry the records yields one
+    # item per `### ` run; one with no sub-headings is itself one item.
+    #
+    # Scoped to sections with NO top-level bullet deliberately. Where a section has bullets, a
+    # `### ` inside it is usually a grouping for the bullets that follow, and folding those would
+    # merge unrelated items — the same guard trap 10 puts on field-bullet records.
+    bulletless_units = []
+    if not idx:
+        if subs:
+            bulletless_units = [(s, next((k for k in subs if k > s), len(body)), body[s][4:].strip())
+                                for s in subs]
+            intro = "\n".join(body[:subs[0]]).strip()
+        else:
+            bulletless_units = [(0, len(body), head)]
+            intro = ""                            # the body IS the record; do not also inline it
+        bulletless += len(bulletless_units)
+    else:
+        intro = "\n".join(body[:idx[0]]).strip()
+    sections.append(dict(head=head, intro=intro, has_items=bool(idx) or bool(bulletless_units)))
+    # A section heading is a heading, so it too can state its status unbolded — and this report is
+    # the ONLY signal for a bullet whose closure lives on the heading above it rather than in its
+    # own text. On the second corpus that was 18 items under three retired headings, every one of
+    # them read as live work with nothing printed. Loose is safe here: this is reported, never
+    # applied, so a false positive costs a person one glance and a miss costs a wrong backlog.
+    sm = SECTION_MARK.search(head) or HEADING_MARK.search(head)
 
     # Fold each all-field `### ` run into ONE unit: (start, end, record_heading_or_None).
-    subs = [i for i, l in enumerate(body) if l.startswith("### ")]
     folded = {}
     for si in subs:
         end = next((k for k in subs if k > si), len(body))
@@ -93,7 +130,7 @@ for a, b in zip(secs, secs[1:] + [len(lines)]):
                 folded[k] = None                       # absorbed into the record above
             records += 1
 
-    units = []
+    units = list(bulletless_units)
     for j, s in enumerate(idx):
         if s in folded:
             if folded[s] is None:
@@ -148,6 +185,12 @@ for a, b in zip(secs, secs[1:] + [len(lines)]):
             u = re.search(r'\*\*\s*(?:[^\w\s]\s*)?(' + CLOSED_WORDS + r')\b', zone)
             if u and not HEDGE.search(zone[:u.start(1)]):
                 undated = u
+        # Unbolded, and only where the zone IS a heading — see HEADING_MARK.
+        unbolded = None
+        if not m and not undated and rec_head:
+            h = HEADING_MARK.search(zone)
+            if h and not HEDGE.search(zone[:h.start(1)]):
+                unbolded = h
         struck = block.lstrip().startswith("- ~~")
         if m:
             status = f"{m.group(1)} ({m.group('d').split(',')[0].strip()})"
@@ -157,6 +200,10 @@ for a, b in zip(secs, secs[1:] + [len(lines)]):
         elif struck:
             status = "KILLED (date unknown)"
             ambiguous.append((block[:70], "struck through, no date"))
+        elif unbolded:
+            dm = re.search(r'\(?\b(\d{4}-\d{2}-\d{2})\b', zone[unbolded.end(1):])
+            status = f"{unbolded.group(1)} ({dm.group(1) if dm else 'date unknown'})"
+            ambiguous.append((rec_head[:70], f"{unbolded.group(1)} stated UNBOLDED in the record's heading"))
         else:
             status = "open"
         if status != "open":
@@ -172,11 +219,15 @@ for a, b in zip(secs, secs[1:] + [len(lines)]):
         else:
             hm = re.match(r'^- \*\*(.+?)\*\*', block, re.S) or re.match(r'^- (.+?)[.\n]', block, re.S)
             summary = " ".join((hm.group(1) if hm else block[2:60]).split())[:180]
-        if sm and status == "open":
+        if sm and status == "open" and rec_head != head:
             # Reported, never applied: a retired SECTION usually means its items are done, but a
             # DONE section can still hold one live item and only a person can tell. The one this
             # found had a heading reading "do not action" — grooming would have re-read it as open,
             # which is the very thing that heading was written to stop.
+            #
+            # `rec_head != head` because a bulletless section IS its own item: the section mark and
+            # the item's own status are then the same text, and reporting it asks a person to
+            # adjudicate a heading against itself.
             section_open.append((f"{head[:58]}…", block.split("\n")[0][:80]))
         items.append(dict(head=head, sec=len(sections)-1, block=block, status=status,
                           trigger=trigger, summary=summary))
@@ -219,10 +270,12 @@ for si, sec in enumerate(sections):
 (out / index_name).write_text("\n".join(index) + "\n")
 print(f"  index              : {out / index_name}  (details under {out / stem}/)")
 print(f"  items written      : {len(items)}  ({closed_n} closed, {len(items)-closed_n} open)")
-bulletless = [s["head"] for s in sections if not s["has_items"]]
 if bulletless:
-    print(f"  sections with NO bullet items: {len(bulletless)}  <- content kept in the index, promote by hand")
-    for h in bulletless:
+    print(f"  records with NO bullet at all, folded from their heading: {bulletless}")
+empty = [s["head"] for s in sections if not s["has_items"]]
+if empty:
+    print(f"  sections with NO content at all: {len(empty)}  <- nothing to promote; check they are headings, not items")
+    for h in empty:
         print(f"      {h[:78]}")
 if records:
     print(f"  `### ` records folded from their field bullets: {records}")

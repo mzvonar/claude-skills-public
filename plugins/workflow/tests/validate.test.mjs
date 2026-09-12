@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -41,6 +42,32 @@ describe("scanBacklog", () => {
       assert.deepEqual(scan(dir), []);
     } finally {
       rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("runs as a CLI when invoked through a symlinked directory", () => {
+    // `import.meta.url` is the REAL path and `process.argv[1]` is whatever the caller typed, so a
+    // main-module guard comparing them raw fails whenever any directory on the way in is a
+    // symlink — and this script's own install path routinely is one, a plugin cache under
+    // `~/.claude` that points elsewhere. It then exits 0 having validated nothing. A gate that
+    // cannot fail reads as a pass, which is worse than a crash: it shipped a 633-finding backlog
+    // as clean. Asserted through the CLI, because `scanBacklog` itself was never the broken half.
+    const dir = cleanTree();
+    const link = mkdtempSync(path.join(tmpdir(), "dbk-link-"));
+    const scripts = path.join(import.meta.dirname, "..", "skills", "backlog", "scripts");
+    try {
+      writeFileSync(path.join(dir, STEM, "dw-002-b.md"), detail({ id: "dw-002", summary: "'B'" }));
+      symlinkSync(scripts, path.join(link, "s"));
+      const run = (script) =>
+        spawnSync(process.execPath, [script, path.join(dir, INDEX_NAME)], { encoding: "utf-8" });
+      const viaLink = run(path.join(link, "s", "validate.mjs"));
+      const viaReal = run(path.join(scripts, "validate.mjs"));
+      assert.match(viaReal.stdout, /NO_TRIGGER/u, "the positive control produced no findings");
+      assert.equal(viaLink.stdout, viaReal.stdout, "findings differ when invoked through a symlink");
+      assert.equal(viaLink.status, viaReal.status, `exit code differs through a symlink: ${viaLink.status}`);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+      rmSync(link, { force: true, recursive: true });
     }
   });
 

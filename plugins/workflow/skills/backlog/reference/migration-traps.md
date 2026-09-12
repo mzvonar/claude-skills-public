@@ -1,8 +1,9 @@
 # Migration traps
 
-Ten defects that were live in this migrator, found against one real 3,622-line corpus. Each is a
-silent corruption: the migration completes, the counts look plausible, and content is misfiled or
-simply absent.
+Twelve defects that were live in this migrator: traps 1–10 found against one real 3,622-line
+corpus, 11 and 12 against a 5,201-line one two adoptions later. Each is a silent corruption: the
+migration completes, the counts look plausible, and content is misfiled or simply absent. Trap 12
+is the limit case — it produces exactly the output a correct run produces.
 
 They are recorded because they are properties of *hand-written markdown ledgers in general*, not of
 one repo's file. Anyone adopting this format will meet them.
@@ -138,7 +139,8 @@ migrator's, so an item-driven walk dropped the whole section — a live item wit
 absent from a migration billed as lossless, with the item count unchanged and nothing to notice.
 
 Walk **sections**, not items. Then a section with no items still reaches the index and gets
-reported for promotion by hand.
+reported for promotion by hand. That was where the first fix stopped, and it was not enough:
+see trap 11, where the same shape is half a ledger and "by hand" is not a remedy.
 
 > Both of these were found by asking a question the item counts cannot answer: *did all of the
 > source's content reach the output?* The item-level answer was a clean 251/251 while 23
@@ -242,6 +244,65 @@ Note where this sits relative to trap 7: that was a heading with **no** bullets,
 whose bullets are not items. They are the same mistake — *the item is not always the bullet* — and
 fixing the first did not reveal the second, because a heading with two bullets under it looks
 exactly like a section that is working.
+
+---
+
+## 11. "Report it, a person will promote it" does not survive the second corpus
+
+Traps 6 and 7 were both closed by *keeping the content in the index and printing a count*. On the
+corpus that found them, one section had no bullets, so one line of output and one hand-promotion
+closed it. On the next ledger — 5,201 lines, 610 KB — **108 of 219 sections had no bullet**, and
+they carried **72 of the ledger's 154 cross-referenced ids**, including four of the six that its
+sprint-status file pointed at. The migration passed its own gate with nothing dropped, and 47% of
+the ledger reached the output as prose with no frontmatter: invisible to `backlog.mjs`, which is
+the one thing the format exists to provide.
+
+So the remedy was the trap. A count of 1 reads as a loose end; the same count at 108 reads as
+"promote a hundred records by hand before you can use this", which nobody does — and the migration
+still calls itself lossless, because the *content* is all there. **When the fix for a shape is
+"report it and promote by hand", ask what that costs at ten times the count.** Below some
+threshold a report is a remedy; above it, it is a way of not implementing the feature.
+
+Fold it instead: a bulletless section is a record whose **heading is its own text**, exactly the
+contract trap 10's field-records already use. One item per `### ` run, or the whole section as one
+item where there are no sub-headings. Report the folded count so the inference stays visible.
+
+Two boundaries opened the moment headings became records, and both were live immediately — the
+"widening a scope opens a boundary" corollary, twice in one change:
+
+- **A heading states its status UNBOLDED.** Every marker pattern needs a `**`, because a bullet's
+  author must emphasise the marker to make it stand out. A heading is already emphasised, so they
+  do not: `## RESOLVED in 8.3 (pre-existing test-rot) — …` migrated open. The same gap sat in the
+  *section*-level check, where it hid twelve items whose closure was written on the heading above
+  them — and that check is the only signal those items have. Anchor the pattern structurally (the
+  heading's start, or after a separator) so a heading that merely mentions the word stays open.
+- **The differential gate reads a different zone.** `migrate.py` takes a folded record's status
+  from the heading; the verifier took it from the block, and `migrate.py` writes the body without
+  the heading — so the two disagreed on every flat record, three of them real closures. This is
+  trap 10's lesson arriving on schedule: *when a definition changes, the question is not "did I fix
+  it" but "who else holds a copy".* The gate caught it, which is the only reason it is a footnote.
+
+---
+
+## 12. The gate exits 0 because it never ran
+
+`validate.mjs` guarded its CLI block with `import.meta.url === pathToFileURL(process.argv[1]).href`.
+`import.meta.url` is the **real** path; `process.argv[1]` is whatever the caller typed. Put one
+symlink anywhere on the way in and they differ, the guard is false, and the script exits 0 having
+validated nothing.
+
+This is not exotic. The script's own install path routinely is a symlink — a plugin cache under
+`~/.claude` pointing at another volume is the ordinary case, and that is exactly how it was found:
+`node ~/.claude/plugins/.../validate.mjs <index>` printed nothing and exited 0, while the same file
+invoked through `realpath` printed **633 findings**. It had been reporting clean for as long as
+anyone had run it that way.
+
+Resolve both sides before comparing. And note the shape, because it is worse than a wrong answer:
+**a gate that cannot fail is indistinguishable from a gate that passed.** Every other trap here
+corrupts data and leaves a plausible count; this one produces the output a correct run produces.
+The only defence is a test that runs the CLI *through a symlink* and asserts it says the same thing
+as the direct invocation — asserting on the exported function would have passed throughout, since
+the exported function was never broken.
 
 ---
 

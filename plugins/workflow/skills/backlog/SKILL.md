@@ -351,9 +351,11 @@ generator already appends to (the detail directory takes the stem).
 `migrate.py` is **lossless for items by construction** — every item's block is written verbatim into
 its detail file, and frontmatter is derived from that block, never invented. A field the source does
 not state is emitted empty and counted, so gaps are visible rather than guessed. It also prints what
-it refuses to decide: untriaged items, sections with no bullets, and open items under a retired
-heading. Each of those lines is a task, not a statistic. It writes `policy: deferred-work` into the
-index; delete that line to run a plain backlog.
+it refuses to decide: untriaged items, statuses it inferred, and open items under a retired heading.
+Each of those lines is a task, not a statistic. A record need not contain a bullet — a section whose
+heading is its own text is folded into an item, one per `### ` run or one for the whole section, and
+the folded count is printed. It writes `policy: deferred-work` into the index; delete that line to
+run a plain backlog.
 
 `verify-migration.mjs` asks the two questions the counts cannot. **Did all of the source's content
 reach the output?** — every item body verbatim and whole, and every other non-blank line by a
@@ -365,5 +367,6 @@ into four named items.
 
 Both of those fired on the first real adoption. **`reference/adopting.md` is the runbook** — the
 order, what to do with each reported count, and the two decisions to make explicitly.
-`reference/migration-traps.md` is why: ten silent corruptions, each live against one real ledger —
-including one the gate itself could not see, because both extractors were missing the same word.
+`reference/migration-traps.md` is why: twelve silent corruptions, each live against a real ledger —
+including one the gate itself could not see, because both extractors were missing the same word,
+and one where the gate exited 0 without running at all.

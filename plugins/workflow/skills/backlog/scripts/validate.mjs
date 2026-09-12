@@ -14,7 +14,7 @@
 // points at, a required field missing, and index entries a generator appended that grooming has not
 // promoted yet.
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -165,7 +165,14 @@ export const scanBacklog = (target) => {
   return findings;
 };
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// `import.meta.url` is the REAL path; `process.argv[1]` is whatever the caller typed. Compare them
+// raw and the guard fails whenever any directory on the way in is a symlink — and this script's own
+// install path routinely is: a plugin cache under `~/.claude` that points elsewhere. It then exits
+// 0 having validated nothing, which is worse than a crash, because a gate that cannot fail reads as
+// a pass. Measured: `node ~/.claude/plugins/.../validate.mjs <index>` printed nothing and exited 0
+// on a backlog with 633 untriaged items; the same file via `realpath` printed all 633.
+const invokedAs = process.argv[1] ? pathToFileURL(realpathSync(process.argv[1])).href : "";
+if (invokedAs && import.meta.url === invokedAs) {
   const target = process.argv[2];
   if (!target) {
     console.error("usage: validate.mjs <index.md | dir>");
