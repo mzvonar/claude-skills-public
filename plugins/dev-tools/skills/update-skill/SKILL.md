@@ -41,13 +41,27 @@ Edit `$REPOS/claude-skills-public/plugins/<plugin>/skills/<skill>/`. Read
 
 ## 3. Try it live from the working tree
 
+**To use the fix in THIS session you need no plugin machinery at all.** A skill is a SKILL.md plus
+scripts, and both are readable from any path: run the checkout's script by its path instead of the
+cached one, and read the checkout's SKILL.md and follow it. A script edit is live the moment it is
+saved. Registration only buys auto-discovery and `/namespaced` invocation — never tell the user to
+restart for a change they want working now.
+
+When the polished invocation matters during development:
+
 ```bash
 claude --plugin-dir "$REPOS/claude-skills-public/plugins/<plugin>"
 ```
 
-That session uses the edited skill under its normal `/<plugin>:<skill>` name. Repeat until it does
-what the user wanted. If a symlink into `.claude/skills/` is unavoidable for the test, add it to
-`.git/info/exclude` and delete it before step 5.
+That session uses the edited skill under its normal `/<plugin>:<skill>` name — but it is a
+session-start flag, so it means relaunching. Repeat until it does what the user wanted. If a symlink
+into `.claude/skills/` is unavoidable for the test, add it to `.git/info/exclude` and delete it
+before step 5: a link can register ALONGSIDE the installed plugin rather than replacing it, and two
+live copies of one skill mean a trigger phrase may fire either with nothing to say which you got.
+
+Never leave a link in `~/.claude/skills/` for a skill the user merely uses. It auto-loads as
+`<name>@skills-dir` carrying no version, so `check-drift.sh` cannot see it and it drifts behind
+upstream in silence. Install the plugin and delete the link.
 
 ## 4. Validate, bump, push
 
@@ -62,6 +76,9 @@ Bump `version` in `plugins/<plugin>/.claude-plugin/plugin.json` AND the plugin's
 renamed skill or changed default). Commit both with the change and push `main`, subject to the
 user's commit and push policy. No bump means no consumer ever receives the change.
 
+`claude plugin tag plugins/<plugin>` checks the two manifests agree and tags the release — cheaper
+than learning of a mismatch from a consumer that never received the update.
+
 For `refdiff` / `svc`: commit and push in their repo, then bump only the marketplace entry here.
 
 ## 5. Roll it out here
@@ -72,7 +89,31 @@ claude plugin update <plugin>@claude-skills-public --scope project    # or the s
 ```
 
 or `"$REPOS/claude-skills-public/scripts/check-drift.sh" --update`. Tell the user to restart
-Claude Code, and that other repos get the change the same way.
+Claude Code, and that other repos get the change the same way — `check-drift.sh --update` is the
+one command per repo.
+
+Run `check-drift.sh` without `--update` first and read the table: it lists only plugins with an
+install record, so a plugin the user's `.claude/settings.json` ENABLES but never installed is absent
+from it, loads fine, and can never update. Install those properly before claiming a repo is current.
+
+## Troubleshooting
+
+**`claude plugin install` fails to clone** (`refdiff` / `svc`, the entries with their own repos).
+A `github` source is cloned over SSH; on a machine authenticated with `gh` over HTTPS and no SSH key
+that fails as `No ED25519 host key is known for github.com`, then `Permission denied (publickey)`.
+Route git's GitHub SSH URLs over HTTPS, where the `gh` credential helper already works:
+
+```bash
+git config --global url."https://github.com/".insteadOf "git@github.com:"
+```
+
+Should a host-key error remain, verify before trusting: compare `ssh-keyscan github.com` against the
+`ssh_keys` array of `https://api.github.com/meta` (TLS), and append only once the two agree.
+
+**Two records for one plugin at one scope.** An interrupted update can orphan one, and
+`claude plugin uninstall` then removes the CURRENT record while the stale one survives, after which
+it reports the plugin as living in another scope and refuses the leftover. Back up
+`~/.claude/plugins/installed_plugins.json`, drop the orphaned entry, re-run `check-drift.sh`.
 
 ## Configuration
 
