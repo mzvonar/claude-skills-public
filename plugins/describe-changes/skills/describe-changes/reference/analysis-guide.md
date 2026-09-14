@@ -127,8 +127,9 @@ Plain English for a stranger. Name code in backticks. Verbs over adjectives. No 
 
 A database change is **one entry** in the ranked list, whatever its file count: the authored schema
 artifact is the headline, the migrations are a muted sidecar beneath it — beneath it literally, in
-the card: the reasons sit at the top, and the migrations hang under the headline file's own diff
-block, where a reader who has just read the schema finds them. Not a section of its own,
+the card: reasons at the top, then the headline file's ⧉ locator with its migrations directly under
+it and no rule between them, so the two read as ONE group of files, and only then the headline's own
+diff block. Not a section of its own,
 not pinned to the top — its position follows its severity like any other finding, so an additive
 index sits below a real correctness bug. It is present **whenever the diff touches a DB file** (the
 validator refuses a report without it), and its severity varies.

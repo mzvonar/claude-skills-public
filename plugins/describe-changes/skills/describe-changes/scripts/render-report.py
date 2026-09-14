@@ -172,9 +172,8 @@ def db_package_html(f, known=None):
     hues apart, in two themes) and its own reviewer question; flat when there is exactly one, a
     list only from two up, so structure grows with actual complexity.
 
-    The migrations are NOT here — they render below the headline file's own diff, in
-    `db_sidecar_html`. The headline is the thing the reader opens first; its migrations hang
-    underneath it, in the order they run.
+    The migrations are NOT here — they render beneath the headline file's ⧉ locator, grouped with
+    it as one set of files, in `db_sidecar_html`.
     """
     pk = f.get("db_package") or {}
     reasons = pk.get("reasons") or []
@@ -196,11 +195,12 @@ def db_package_html(f, known=None):
     return f'<div class="dbp"><b>DB schema change</b>{rs}</div>'
 
 def db_sidecar_html(f, known=None):
-    """The migration files, rendered directly BENEATH the headline file's diff.
+    """The migration files, rendered directly beneath the headline file's ⧉ locator.
 
-    Placement is the point: the headline is the authored schema, and its migrations are what that
-    schema turned into — so they hang under the schema's own block, where a reader who has just
-    read the diff finds them, rather than above it where they interrupt the reasons.
+    Placement is the point, and so is the absence of a rule above it: the headline file and its
+    migrations are ONE group of files, so they sit together — locator, then migrations, then the
+    headline's own diff. Put a horizontal border between them and the eye reads a section break
+    instead of a group, which is exactly the belonging the package exists to show.
 
     Muted, collapsed, ordered as the classifier ordered them (filename/timestamp — whether a
     backfill runs before or after a structural change is a correctness property), each opening its
@@ -277,8 +277,8 @@ def finding_card(f, hunks, note=None, known=None):
     {prov_badge(f.get("provenance"))}
     {('<div class="tags">' + "".join(f'<span class="tag">{E(t)}</span>' for t in tags) + '</div>') if tags else ""}
     <div><span class="loc" data-loc="{E(loc)}">⧉ {E(loc)}</span></div>
-    {('<details class="more"><summary>Show code</summary>' + code + '</details>') if code else ""}
     {db_sidecar_html(f, known) if is_db else ""}
+    {('<details class="more"><summary>Show code</summary>' + code + '</details>') if code else ""}
     <div class="fb"><button data-t="more">▲ More important</button><button data-t="less">▼ Less important</button><button data-t="noise" class="danger">✕ Noise</button><button data-t="checked">✓ Checked</button></div>
     <div class="fb"><textarea placeholder="Note for the skill (what was wrong / missing / useful)…">{E(note or "")}</textarea></div>
   </div></div>'''

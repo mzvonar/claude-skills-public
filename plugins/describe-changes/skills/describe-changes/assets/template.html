@@ -243,7 +243,10 @@ button.fpath:active{border-color:var(--info)}
 .dbp-q{margin-top:.25rem;color:var(--fg);font-size:.92rem}
 .dbp-d{margin-top:.2rem;font-size:.85rem;color:var(--fg2)}
 .dbp-by{margin-top:.2rem;font-size:.75rem;color:var(--fg3)}
-.sidecar{margin-top:.7rem;padding-top:.5rem;border-top:1px solid var(--line);font-size:.78rem;color:var(--fg3)}
+/* No rule above it, and tight to the ⧉ locator: the headline file and its migrations are ONE
+   group of files. A horizontal border between them reads as a section break, and the reader stops
+   seeing the migrations as belonging to the schema. */
+.sidecar{margin-top:.2rem;font-size:.78rem;color:var(--fg3)}
 .sidecar summary{cursor:pointer;color:var(--fg3);font-size:.78rem;padding:.15rem 0}
 .sidecar summary:hover{color:var(--fg2)}
 .sidecar-empty{color:var(--fg2);font-style:italic}

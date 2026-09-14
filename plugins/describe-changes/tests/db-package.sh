@@ -29,11 +29,16 @@ findings = list(extra)
 if db:
     sev = db["severity"] or "low"
     reasons = db["reasons"] or [{"kind": "additive_ddl", "severity": "low", "question": "Is anything here more than additive?", "detail": "non-SQL migration; read by hand"}]
+    # The headline carries its own hunk, as the skill tells the analyst to ("hunks: [...] so the
+    # renderer pulls the code for free"). Without it the card has no "Show code" block, and every
+    # assertion about what sits above or below that block passes vacuously.
+    hf = next((x for x in m["files"] if x["path"] == db["headline"]), None)
+    hunks = [h["id"] for h in (hf or {}).get("hunks", []) if h["category"] == "substantive"][:1]
     findings.append({
         "id": None, "severity": sev,
         "title": "Database change: " + (db["schema_artifact"] if db["headline_kind"] == "schema" else "migrations only"),
         "verify": reasons[0].get("question") or "?", "why_human": "Irreversible on a real database.",
-        "file": db["headline"],
+        "file": db["headline"], "hunks": hunks,
         "db_package": {"headline_kind": db["headline_kind"],
                        "migrations": [({"path": mg["path"], "note": mg["summary"]} if mg["summary"] else {"path": mg["path"]}) for mg in db["migrations"]],
                        "reasons": reasons}})
@@ -126,13 +131,15 @@ assert len(notes) == 1 and "drops column Post.firmId" in notes[0], notes      # 
 assert "no findings" not in side.lower() and "nothing to see" not in side.lower(), "routine files must be bare filenames"
 assert 'class="ann"' in side and side.count("<li") == 3, "annotated file is a shade less muted; no per-file severity badge"
 assert not re.search(r'<li[^>]*>\s*<span class="pill', side), "no per-file severity badge in the sidecar"
-# Placement: the migrations hang UNDER the headline file's own block, not above the reasons.
-# The headline is what the reader opens first; its migrations are what that schema turned into.
+# Placement: the migrations sit directly under the headline file's ⧉ locator, so the two read as
+# ONE group of files — after the reasons, and BEFORE the headline's own diff block.
 i_side = card.index('<details class="sidecar">')
 assert i_side > card.index('class="dbp"'), "sidecar must come after the reasons, not interrupt them"
-assert i_side > card.index('class="loc"'), "sidecar must come after the headline file locator"
+assert i_side > card.index('class="loc"'), "sidecar must come directly after the headline file locator"
 if "Show code" in card:
-    assert i_side > card.index("Show code"), "sidecar must hang BELOW the headline file's diff block"
+    assert i_side < card.index("Show code"), "sidecar belongs with the locator, above the diff block"
+between = card[card.index('class="loc"'):i_side]
+assert "<details" not in between, f"nothing may sit between the locator and its migrations: {between[:120]}"
 # §7 — the exclusion trap: sidecar files must NOT reappear in "Everything else".
 unrev = re.search(r'<section id="unreviewed">(.*?)</section>', h, re.S).group(1)
 leaked = [p for p in files + ["prisma/schema.prisma"] if f'data-file="{p}"' in unrev]
