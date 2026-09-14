@@ -99,6 +99,31 @@ def language(path):
             ".sh": "shell", ".bash": "shell", ".zsh": "shell", ".yml": "yaml", ".yaml": "yaml", ".json": "json",
             ".md": "markdown", ".mdx": "markdown", ".toml": "toml", "Makefile": "make"}.get(e, e.lstrip(".") or "text")
 
+
+# ---------------------------------------------------------------- area
+# Which of three reading registers a file belongs to, so the report's "Everything else" list can put
+# code first and let the reader skim or skip tooling and docs. Tooling is decided BEFORE docs so a
+# skill's SKILL.md or a CLAUDE.md counts as tooling, not prose. Anything unrecognised is code.
+TOOLING_DIRS = (".claude/", ".agents/", ".cursor/", ".codex/", ".github/", ".gitlab/", ".husky/", ".vscode/",
+                ".idea/", ".devcontainer/", ".circleci/", ".buildkite/")
+TOOLING_NAMES = {"CLAUDE.md", "AGENTS.md", ".gitlab-ci.yml", "Dockerfile", "Makefile", "Justfile", "justfile",
+                 ".editorconfig", ".gitignore", ".gitattributes", ".gitmodules", ".nvmrc", ".node-version",
+                 ".tool-versions", ".python-version", "package.json", "pnpm-workspace.yaml", "lerna.json",
+                 "turbo.json", "nx.json", "pyproject.toml", "setup.cfg", "Cargo.toml", "go.mod", "build.gradle",
+                 "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "pom.xml", "Gemfile", "renovate.json",
+                 ".renovaterc", "dependabot.yml", "codecov.yml", "sonar-project.properties"}
+DOC_DIRS = ("docs/", "doc/", "wiki/", "_bmad-output/", ".planning/", "adr/", "rfcs/")
+DOC_EXT = {".md", ".mdx", ".rst", ".adoc", ".txt"}
+
+def area(path):
+    p = path.replace("\\", "/"); base = p.rsplit("/", 1)[-1]; e = ext_of(p)
+    if p.startswith(TOOLING_DIRS) or base in TOOLING_NAMES: return "tooling"
+    if re.match(r"^(docker-compose[\w.-]*\.ya?ml|compose[\w.-]*\.ya?ml|tsconfig[\w.-]*\.json|\.[\w-]+rc(\.[\w]+)?|[\w.-]+\.config\.[cm]?[jt]s|lint-staged\.config\.[cm]?js)$", base):
+        return "tooling"
+    if base.split(".")[0].upper() in {"README", "CHANGELOG", "LICENSE", "CONTRIBUTING", "CODEOWNERS", "SECURITY", "NOTICE"}: return "docs"
+    if e in DOC_EXT or p.startswith(DOC_DIRS): return "docs"
+    return "code"
+
 # ---------------------------------------------------------------- parsing
 class Hunk:
     def __init__(s, header, old_start, old_len, new_start, new_len, context):
@@ -665,7 +690,7 @@ def main():
             rename_targets[f.old_path] = {"path": f.new_path, "overlap": (f.similarity or 0) / 100}
         if f.status == "added" and noise is None: added_files.append(f)
         entry = {"id": f"F{fi}", "path": f.path, "old_path": f.old_path if f.old_path != f.path else None,
-                 "status": cat_file, "similarity": f.similarity, "language": language(f.path),
+                 "status": cat_file, "similarity": f.similarity, "language": language(f.path), "area": area(f.path),
                  "whitespace_sensitive": ws, "noise_kind": noise, "hunks": hunks,
                  "substantive_hunks": sum(1 for h in hunks if h["category"] == "substantive"),
                  "symbols_added": sorted(sym_added[f.path]), "symbols_removed": sorted(sym_removed[f.path])}

@@ -1,6 +1,6 @@
 ---
 name: describe-changes
-version: "1.17.4"
+version: "1.18.0"
 description: >
   Present an implemented change to a human reviewer the way a human needs it: what was done and why,
   a visual map of the high-level change (who calls whom, where data flows, what moved/split/renamed),
@@ -285,6 +285,9 @@ Exactly this shape, nothing more:
    convey by listing findings, and it is what tells the reader how much of the report is a second
    opinion. Say nothing here on a single-pass run — silence means one reader, which is the default.
 5. **Folded noise** as one line: "Folded: 3 renames (+11 import rewrites), 6 formatting hunks, 2 lockfiles".
+5b. **Everything else** as one line of counts by register, code first: "Unflagged: 12 code · 3 tooling
+   · 5 docs" — the report groups that list the same way, so the reader knows how much of it is code
+   before opening it.
 6. The URLs. For `--chat-only` there is no page to link, so inline the rest: the map as a
    ```mermaid``` block **between the summary and the phases** — same order as the report, and for the
    same reason — then the full low list and the folded groups at the end.

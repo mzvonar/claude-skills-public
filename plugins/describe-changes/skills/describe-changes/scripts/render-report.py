@@ -1006,7 +1006,13 @@ def main():
 
     flagged_files = {f["file"] for f in findings}
     rest = [f for f in model["files"] if f["substantive_hunks"] and f["path"] not in flagged_files]
-    b.append(f'<section id="unreviewed"><h2>Everything else that changed <span class="cnt">{len(rest)} files, nothing flagged</span></h2><div class="unrev">')
+    # Three registers, code FIRST: the reader skims this list for what might still matter, and a
+    # changed function deserves that glance more than a changed skill file or a doc. Tooling and docs
+    # get their own group so they can be skipped as a block instead of picked out row by row.
+    AREAS = (("code", "Code"), ("tooling", "Tooling"), ("docs", "Docs"))
+    by_area = {k: [f for f in rest if (f.get("area") or "code") == k] for k, _ in AREAS}
+    area_counts = " · ".join(f'{len(by_area[k])} {lbl.lower()}' for k, lbl in AREAS if by_area[k])
+    b.append(f'<section id="unreviewed"><h2>Everything else that changed <span class="cnt">{len(rest)} files, nothing flagged{(" — " + area_counts) if area_counts and len([k for k,_ in AREAS if by_area[k]]) > 1 else ""}</span></h2><div class="unrev">')
     b.append('<div class="empty">Substantive but not surfaced. Fresh eyes welcome — ⚑ raises a gut-flag for Claude to dig into.</div>')
     # One store of per-file changed code (substantive hunks, capped) — read lazily by the
     # "Everything else" rows and by every ⟨/⟩ file chip in the views.
@@ -1024,7 +1030,10 @@ def main():
         if cut: body.append(f'<div class="empty">… {cut} more lines not shown (open the file for the rest)</div>')
         status = f["status"] + (f' ← {f["old_path"]}' if f.get("old_path") else "") + (f' ← moved from {f["moved_from"]}' if f.get("moved_from") else "")
         store[f["path"]] = {"status": status, "html": "".join(body) or '<div class="empty">no substantive hunks (folded as noise: ' + E(f.get("noise_kind") or ", ".join(sorted({h["category"] for h in f["hunks"]})) or "—") + ')</div>'}
-    for f in rest:
+    for area_key, area_label in AREAS:
+      if not by_area[area_key]: continue
+      b.append(f'<h3 class="area" data-area="{area_key}">{area_label} <span class="cnt">{len(by_area[area_key])}</span></h3>')
+      for f in by_area[area_key]:
         why = (report.get("unreviewed_notes") or {}).get(f["path"], "")
         b.append(f'<div class="row fold-row" data-file="{E(f["path"])}"><span class="tw">▶</span><span class="rp">{E(f["path"])} <span style="color:var(--fg3)">· {E(store[f["path"]]["status"])} · {f["substantive_hunks"]} hunk{"s" if f["substantive_hunks"] != 1 else ""}{(" · " + E(why)) if why else ""}</span></span><button data-file="{E(f["path"])}">⚑</button></div>'
                  f'<div class="row-body" data-file="{E(f["path"])}"><div class="row-code"></div><div class="row-close"><button class="btn">▲ Collapse {E(os.path.basename(f["path"]))}</button></div></div>')

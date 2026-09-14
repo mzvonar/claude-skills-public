@@ -432,6 +432,29 @@ PY
 grep -q 'Renamed files' "$OUT/index.html" || fail "fold card missing"
 grep -q 'row fold-row' "$OUT/index.html" && grep -A3 'row fold-row' "$OUT/index.html" | grep -q 'row-body' || fail "everything-else rows not expandable"
 
+# "Everything else" is grouped by register, code FIRST, so the reader can skim code and skip the rest.
+python3 - "$OUT/index.html" "$S/classify-diff.py" <<'PY' || fail "everything-else grouping"
+import re, sys, importlib.util
+html = open(sys.argv[1]).read()
+sec = re.search(r'<section id="unreviewed">(.*?)</section>', html, re.S).group(1)
+groups = re.findall(r'<h3 class="area" data-area="(\w+)">', sec)
+assert groups == [g for g in ("code", "tooling", "docs") if g in groups], groups
+assert groups[0] == "code" and "docs" in groups, groups
+def group_of(path):
+    i = sec.index(f'data-file="{path}"'); return re.findall(r'data-area="(\w+)"', sec[:i])[-1]
+assert group_of("script.py") == "code", group_of("script.py")
+assert group_of("docs/adr/0007-new-decision.md") == "docs"
+spec = importlib.util.spec_from_file_location("cd", sys.argv[2]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+cases = {"src/api/users.ts": "code", "scripts/run.mjs": "code", "src/config.ts": "code", "src/foo.config.json": "code",
+         "README.md": "docs", "docs/adr/0007.md": "docs", "notes.txt": "docs", "_bmad-output/x/y.md": "docs", "frontend/README.md": "docs",
+         ".claude/skills/x/SKILL.md": "tooling", "CLAUDE.md": "tooling", "AGENTS.md": "tooling", ".github/workflows/ci.yml": "tooling",
+         ".gitlab-ci.yml": "tooling", "package.json": "tooling", "tsconfig.base.json": "tooling", "vite.config.ts": "tooling",
+         ".eslintrc.json": "tooling", "docker-compose.test.yml": "tooling", "Dockerfile": "tooling", "e2e/playwright.showcase.config.ts": "tooling"}
+bad = {k: m.area(k) for k, v in cases.items() if m.area(k) != v}
+assert not bad, bad
+print("everything-else grouping OK")
+PY
+
 # Snapshots: a report read twice must be able to say what moved between the readings.
 python3 "$S/snapshots.py" list --dir "$OUT" | grep -q "001-" || fail "the render did not record a snapshot"
 python3 "$S/snapshots.py" diff --dir "$OUT" | grep -q "Nothing changed" || fail "an unchanged report must report no delta"

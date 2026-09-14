@@ -18,6 +18,9 @@ Ranking between classes when the cap bites: irreversible damage (data, auth, mon
 convention divergence (it propagates — the next change copies it) > a localised correctness question.
 Rather than 5 criticals, produce 3 criticals and put the other two first in medium.
 Zero findings is a valid report. Say so plainly; the "Everything else" list carries the honesty.
+That list is grouped by each file's `area` from `diff-model.json` — **Code**, then **Tooling** (`.claude/`,
+CI, manifests, configs, CLAUDE.md/AGENTS.md), then **Docs** — so a reader can give code the glance and skip
+the rest as a block. The grouping is mechanical; do not restate it in prose.
 
 ## 2. What earns a flag (signals, strongest first)
 

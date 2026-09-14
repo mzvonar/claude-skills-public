@@ -14,7 +14,7 @@ it or why they made a choice — read what is there.
 
 Inputs, all under `$OUT`:
 
-- `diff-model.json` — read this FIRST: `stats`, `folds`, `symbol_moves`, per-file `status` /
+- `diff-model.json` — read this FIRST: `stats`, `folds`, `symbol_moves`, per-file `area` (code | tooling | docs), `status` /
   `moved_from` / `symbols_added|removed`, hunk `category` + `symbol` + `id`.
 - `substantive.diff` — only the hunks that survived noise-folding. Each is tagged `[F3H2]`; cite
   those ids.
