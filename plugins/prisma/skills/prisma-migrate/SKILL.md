@@ -95,14 +95,21 @@ PrismaClientValidationError: Invalid value for argument `type`. Expected <Enum>.
 
 even though the schema, the regenerated client on disk and the DB all have it (`grep -rl NEWVALUE node_modules/.prisma/client/`, `SELECT … FROM pg_enum`). Fix: `generate`, then a clean dev-server restart. CI and production build fresh, so only long-running local dev servers hit this.
 
-## Raw-SQL objects Prisma cannot model are dropped on every `migrate dev`
+## Raw-SQL objects Prisma cannot model get a generated `DROP` — delete it, never re-create after it
 
-Vector indexes (HNSW/IVFFlat — `@@index(type:)` supports only BTree/Hash/Gin/Gist/SpGist/Brin, no storage parameters, no operator classes), partial unique indexes (`WHERE deletedAt IS NULL`), extensions and functions live in raw SQL because the schema language cannot express them. Prisma's diff treats them as drift and emits `DROP INDEX` / `DROP …` at the top of **every** new migration it generates — regardless of which table the migration touches. The drop is silent: tests still pass (a missing vector index is a perf regression, not a correctness failure, and a dropped partial unique constraint just stops constraining), so it reaches review unless caught at the SQL-inspection step.
+Vector indexes (HNSW/IVFFlat — `@@index(type:)` supports only BTree/Hash/Gin/Gist/SpGist/Brin, no storage parameters, no operator classes), extensions, triggers, views and functions live in raw SQL because the schema language cannot express them. Prisma's diff treats them as drift and emits `DROP INDEX` / `DROP …` in the migration it generates. The drop is silent — tests still pass, since a missing vector index is a perf regression and not a correctness failure — so it reaches review unless caught at the SQL-inspection step. Customizing the migration IS Prisma's documented answer for unsupported features; the question is only *how* you customize it.
 
-List yours in `unmanagedSql` (name + `CREATE … IF NOT EXISTS` statement) and treat them as one set:
+**It is not every migration — only the ones that touch the owning table.** Measured on one repo with two unmanaged hnsw indexes across 108 migrations: **6** carried the generated `DROP`, while **36** carried a re-assert block someone had added defensively, and four of the six real drops carried no re-assert at all. The ritual was being applied roughly six times more often than needed, and was absent where it actually mattered. Inspect the generated SQL; do not pre-emptively decorate every migration.
 
-1. After `migrate dev`, grep the generated SQL for `DROP INDEX` **generally** — not only for your index names; the partial-unique drop is the one that slips past a narrow pattern.
-2. Delete the spurious `DROP` lines and append every `unmanagedSql` statement at the bottom of the new `migration.sql`, verbatim, with the same parameters every time (changing an index's parameters silently re-tunes behaviour).
+**Two things are NOT in this category, and treating them as if they were is the common error:**
+
+- **Partial indexes are DECLARATIVE now.** Prisma 7 supports `where:` on `@@index`, `@@unique` and `@unique` (`partialIndexes` preview), and the docs say it outright: *"You no longer need to customize migrations for partial indexes."* An `unmanagedSql` entry for one the schema now declares is stale — remove it, or every migration re-asserts an index Prisma already owns.
+- **CHECK constraints are the opposite case.** PSL cannot express them at all, so Prisma's differ does not model them and never proposes dropping one. Add via a customized migration and then leave it alone: no `unmanagedSql` entry, no re-assert, no verification-gate line. Same repo, same 108 migrations: 3 CHECK constraints added by hand, **0** ever dropped, all 3 still live.
+
+List the genuinely unmanaged ones in `unmanagedSql` (name + `CREATE … IF NOT EXISTS` statement) and treat them as one set:
+
+1. After `migrate dev`, grep the generated SQL for `DROP INDEX` **generally** — not only for your index names.
+2. **DELETE the generated `DROP` lines. Never let a drop stand and re-create the object after it.** Both end with the index present, so the difference is invisible in review and decisive in production: re-creating is a full, non-concurrent index build holding a write lock on the table for the length of the deploy, and vector indexes sit on the biggest tables you have. Deleting the statement costs nothing. Keeping the `unmanagedSql` re-assert as replay protection is fine — with the drops gone it is an `IF NOT EXISTS` no-op — but it is the deletion that does the work.
 3. If `migrate dev` already executed the drop on the dev DB, re-create the objects by hand.
 4. If it also half-applied the migration (so its `_prisma_migrations` checksum is now stale against your hand-edited SQL): delete that migration's `_prisma_migrations` row, drop whatever the migration created, then `migrate deploy` to re-apply the corrected file from scratch with a matching checksum.
 
@@ -111,12 +118,15 @@ Verification gate for every new migration on a branch:
 ```bash
 base=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|origin/||'); base=${base:-main}
 for m in $(git diff "$base"...HEAD --name-only --diff-filter=A | grep '^prisma/migrations/.*/migration\.sql$'); do
-  grep -q 'DROP INDEX' "$m" && { echo "spurious DROP INDEX left in $m"; exit 1; }
   for name in <each unmanagedSql.name>; do
-    grep -q "IF NOT EXISTS \"$name\"" "$m" || { echo "$name missing in $m"; exit 1; }
+    grep -q "DROP INDEX.*\"$name\"" "$m" && { echo "generated DROP for unmanaged $name left in $m — delete the line"; exit 1; }
   done
+  # Any OTHER index drop may well be intentional; surface it for a human rather than failing.
+  grep -q 'DROP INDEX' "$m" && echo "note: $m drops an index — confirm it is deliberate"
 done
 ```
+
+The gate asserts the **absence of the drop**, not the presence of a re-assert. An earlier version required every `unmanagedSql` name to appear in every new migration, and that is precisely what produced 36 no-op re-assert blocks against 6 real drops in the repo this was measured on: a gate that cannot be satisfied except by decorating, so everyone decorated. The object surviving is the invariant; a re-assert is one way to get there and the expensive one.
 
 Back it with an integration test that queries `pg_indexes` / `pg_extension` after `migrate deploy` and asserts each object exists — the structural fix that survives author oversight. The test DB self-heals on the next re-provision; the dev DB needs manual repair after a drop.
 
@@ -160,7 +170,7 @@ Optional, in `.claude/claude-skills.json`:
 | Key | Default | Meaning |
 |---|---|---|
 | `allowReset` | `false` | Whether the agent may run `prisma migrate reset`. Off because it wipes a DB that is often shared or hand-seeded, and every blocker has a non-destructive path above. |
-| `unmanagedSql` | `[]` | Raw-SQL objects Prisma cannot model, as `{ name, sql }`; re-asserted at the bottom of every new migration and checked by the verification gate. |
+| `unmanagedSql` | `[]` | Raw-SQL objects Prisma cannot model, as `{ name, sql }`. The verification gate fails a migration that still carries a generated `DROP` for one. Do NOT list partial indexes (declarative since Prisma 7) or CHECK constraints (never dropped). |
 | `envFile` | `.env.local` | File the preflight checks for and that `prisma.config.ts` loads. |
 | `schemaPath` | auto: `prisma.config.ts`, else `prisma/schema.prisma` | Where the schema lives when detection is wrong. |
 
