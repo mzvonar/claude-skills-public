@@ -3,6 +3,7 @@
 //
 //   node validate.mjs <index.md>          e.g. node validate.mjs docs/backlog/index.md
 //   node validate.mjs <dir>               shorthand for <dir>/index.md
+//   node validate.mjs <index.md> --defects-only   exit 1 only on a structural defect (see STATES)
 //
 // The detail directory is the index's sibling named after its stem: `index.md` -> `index/`,
 // `deferred-work.md` -> `deferred-work/`.
@@ -34,6 +35,14 @@ const CLOSED = /^(DONE|KILLED|CLOSED|SUPERSEDED|RETIRED|RESOLVED)\b/u;
 // Declared in the index's own frontmatter, so the policy is visible where you already look and no
 // second config file has to be found, parsed or kept in sync.
 const POLICIES = new Set(["deferred-work"]);
+
+// A finding is a DEFECT or a STATE. A defect is drift in the structure that no reader notices: an id
+// two items share, a pointer to nothing, a file nothing points at. A build may fail on one. A state is
+// backlog content waiting for a person: an open item with no trigger, or an entry that a tool appended and
+// grooming did not promote yet. Failing a build on a state blocks ordinary work on a judgment that nobody
+// made yet, so `--defects-only` prints states and fails only on defects. A code added to the scanner
+// later counts as a defect until it is listed here, which is the direction that fails loudly.
+export const STATES = new Set(["NO_TRIGGER", "RAW_APPEND", "UNPROMOTED_APPENDS"]);
 
 // A YAML single-quoted scalar escapes one thing: a quote, doubled. Strip the wrapper and undo it,
 // or the reader shows the escape — `Exception''s` reached every grooming pass because the writer
@@ -173,11 +182,13 @@ export const scanBacklog = (target) => {
 // on a backlog with 633 untriaged items; the same file via `realpath` printed all 633.
 const invokedAs = process.argv[1] ? pathToFileURL(realpathSync(process.argv[1])).href : "";
 if (invokedAs && import.meta.url === invokedAs) {
-  const target = process.argv[2];
-  if (!target) {
-    console.error("usage: validate.mjs <index.md | dir>");
+  const [target, ...flags] = process.argv.slice(2);
+  const unknown = flags.filter((flag) => flag !== "--defects-only");
+  if (!target || target.startsWith("--") || unknown.length > 0) {
+    console.error("usage: validate.mjs <index.md | dir> [--defects-only]");
     process.exit(2);
   }
+  const defectsOnly = flags.includes("--defects-only");
   let findings;
   try {
     findings = scanBacklog(target);
@@ -188,6 +199,10 @@ if (invokedAs && import.meta.url === invokedAs) {
   for (const f of findings) {
     console.log(`${f.code}  ${f.where}: ${f.detail}`);
   }
-  console.log(findings.length === 0 ? "backlog: index and detail files are consistent" : `backlog: ${findings.length} finding(s)`);
-  process.exit(findings.length === 0 ? 0 : 1);
+  const defects = findings.filter((f) => !STATES.has(f.code)).length;
+  console.log(findings.length === 0
+    ? "backlog: index and detail files are consistent"
+    : `backlog: ${findings.length} finding(s): ${defects} defect(s), ${findings.length - defects} state(s)`);
+  const failing = defectsOnly ? defects : findings.length;
+  process.exit(failing === 0 ? 0 : 1);
 }

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import { scanBacklog } from "../skills/backlog/scripts/validate.mjs";
+import { STATES, scanBacklog } from "../skills/backlog/scripts/validate.mjs";
 
 // The index name is a parameter (the default is `index.md`); the fixtures use a non-default name
 // so the stem -> detail-directory derivation is exercised, not just assumed.
@@ -184,6 +184,58 @@ describe("scanBacklog", () => {
         detail({ id: "dw-002", status: "DONE (2026-01-01)", summary: "'B'" }) +
         "\nRetire an item by writing `status: open` -> `status: KILLED (date)`.\n");
       assert.deepEqual(scan(dir), []);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("defects and states", () => {
+  const SCRIPT = path.join(import.meta.dirname, "..", "skills", "backlog", "scripts", "validate.mjs");
+  const cli = (dir, ...flags) =>
+    spawnSync(process.execPath, [SCRIPT, path.join(dir, INDEX_NAME), ...flags], { encoding: "utf-8" });
+
+  it("names exactly the grooming states, each one a code the scanner emits", () => {
+    // Pinned as a set, and each member checked against the source: a renamed state code would sit
+    // here matching nothing, and its findings would start failing builds with nothing to say why.
+    assert.deepEqual([...STATES].toSorted(), ["NO_TRIGGER", "RAW_APPEND", "UNPROMOTED_APPENDS"]);
+    const emitted = new Set(
+      [...readFileSync(SCRIPT, "utf-8").matchAll(/add\("(?<code>[A-Z_]+)"/gu)].map((m) => m.groups.code));
+    for (const code of STATES) {
+      assert.ok(emitted.has(code), `${code} is listed as a state, and the scanner never emits it`);
+    }
+  });
+
+  it("--defects-only passes a backlog whose only findings are states", () => {
+    const dir = cleanTree();
+    try {
+      writeFileSync(path.join(dir, STEM, "dw-001-a.md"), detail({ id: "dw-001", status: "open", summary: "'A'" }));
+      writeFileSync(path.join(dir, INDEX_NAME), INDEX + "- a bare bullet that a generator appended\n");
+      assert.deepEqual(codes(scan(dir)), ["NO_TRIGGER", "RAW_APPEND"], "the fixture must hold states and nothing else");
+      assert.equal(cli(dir, "--defects-only").status, 0);
+      assert.equal(cli(dir).status, 1, "without the flag every finding still fails, as before");
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("--defects-only fails on a structural defect", () => {
+    const dir = cleanTree();
+    try {
+      writeFileSync(path.join(dir, STEM, "dw-001-a.md"), detail({ id: "dw-002", status: "open", summary: "'A'", trigger: "'t'" }));
+      assert.deepEqual(codes(scan(dir)), ["DUPLICATE_ID"]);
+      const run = cli(dir, "--defects-only");
+      assert.equal(run.status, 1);
+      assert.match(run.stdout, /DUPLICATE_ID/u);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("refuses an unknown flag rather than running in a mode nobody asked for", () => {
+    const dir = cleanTree();
+    try {
+      assert.equal(cli(dir, "--defect-only").status, 2);
     } finally {
       rmSync(dir, { force: true, recursive: true });
     }

@@ -167,6 +167,20 @@ nothing to notice. On the first adoption the predecessor's own tooling *promised
 and never checked it, so the promise pointed at an empty list for months. Whatever holds your gate,
 assert that it still resolves to a live step, and that it still points here.
 
+**Guard the structure too, with the same validator.** Ids come from the working tree, so two branches
+that each take the next free id collide when one merges the other. Git reports at most a conflict
+in the index. `scripts/validate.mjs` names that (`DUPLICATE_ID`), along with pointers to nothing
+and files nothing points at. Run it in CI with `--defects-only`:
+
+```bash
+node scripts/validate.mjs <index.md> --defects-only
+```
+
+That fails only on a structural defect. It still prints the grooming states (`NO_TRIGGER`,
+`UNPROMOTED_APPENDS`, `RAW_APPEND`), but it does not fail on them. Each state is work waiting for a
+person, not drift, and a build must not block on a judgment that nobody made yet. `STATES` in the
+script is that list. A code that the scanner adds later counts as a defect until it is listed there.
+
 ## Grooming
 
 Grooming classifies every open item against the piece of work being scoped and returns a report.
