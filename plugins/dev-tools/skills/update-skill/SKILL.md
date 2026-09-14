@@ -79,7 +79,14 @@ user's commit and push policy. No bump means no consumer ever receives the chang
 `claude plugin tag plugins/<plugin>` checks the two manifests agree and tags the release — cheaper
 than learning of a mismatch from a consumer that never received the update.
 
-For `refdiff` / `svc`: commit and push in their repo, then bump only the marketplace entry here.
+For `refdiff` / `svc` the version that gates updates lives in THEIR repo, not here. Bump
+`.claude-plugin/plugin.json` there and push it with the change; that manifest is what the installed
+copy reports and what `claude plugin update` compares. Bump the marketplace entry here to match, so
+the listing does not lie — but the entry alone changes nothing. Measured: with the entry at 1.1.0
+and the repo's manifest still 1.0.0, `claude plugin update` reported "already at the latest version
+(1.0.0)" against a cache four days stale, and the only way through was uninstalling and deleting the
+cache directory by hand. Note also that `claude plugin tag` compares two manifests in ONE repo, so
+for these it cannot see the pair — check them by eye.
 
 ## 5. Roll it out here
 
