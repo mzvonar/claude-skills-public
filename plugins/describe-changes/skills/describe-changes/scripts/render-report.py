@@ -166,19 +166,15 @@ DB_DETECTED_LABEL = {"config": "matched against the repo's unmanagedSql config",
 DB_NOTE_MAX = 100
 
 def db_package_html(f, known=None):
-    """The DB schema package inside its finding card (report-schema.md → db_package).
+    """The DB schema package's REASONS, at the top of its finding card (report-schema.md → db_package).
 
-    Reasons first — each with its severity AS TEXT (the report is read by people who will not tell
-    the hues apart, in two themes) and its own reviewer question; flat when there is exactly one,
-    a list only from two up, so structure grows with actual complexity. Then the sidecar: the
-    migration files, muted, collapsed, ordered as the classifier ordered them (filename/timestamp
-    — whether a backfill runs before or after a structural change is a correctness property), each
-    opening its diff through the same file store every other path on the page uses.
+    Each reason carries its severity AS TEXT (the report is read by people who will not tell the
+    hues apart, in two themes) and its own reviewer question; flat when there is exactly one, a
+    list only from two up, so structure grows with actual complexity.
 
-    No per-file severity badge, deliberately: one file can carry reasons of different severity, so
-    a badge would re-collapse to worst-of under an entry that already did that rollup. The per-file
-    signal is the presence of a one-line summary; a bare filename means nothing to see. And a lone
-    migration gets no summary at all — the reason above already refers to the only file.
+    The migrations are NOT here — they render below the headline file's own diff, in
+    `db_sidecar_html`. The headline is the thing the reader opens first; its migrations hang
+    underneath it, in the order they run.
     """
     pk = f.get("db_package") or {}
     reasons = pk.get("reasons") or []
@@ -197,6 +193,25 @@ def db_package_html(f, known=None):
         rs = reason_html(reasons[0])
     else:
         rs = '<ul class="dbp-rs">' + "".join(f"<li>{reason_html(r)}</li>" for r in reasons) + "</ul>"
+    return f'<div class="dbp"><b>DB schema change</b>{rs}</div>'
+
+def db_sidecar_html(f, known=None):
+    """The migration files, rendered directly BENEATH the headline file's diff.
+
+    Placement is the point: the headline is the authored schema, and its migrations are what that
+    schema turned into — so they hang under the schema's own block, where a reader who has just
+    read the diff finds them, rather than above it where they interrupt the reasons.
+
+    Muted, collapsed, ordered as the classifier ordered them (filename/timestamp — whether a
+    backfill runs before or after a structural change is a correctness property), each opening its
+    diff through the same file store every other path on the page uses.
+
+    No per-file severity badge, deliberately: one file can carry reasons of different severity, so
+    a badge would re-collapse to worst-of under an entry that already did that rollup. The per-file
+    signal is the presence of a one-line summary; a bare filename means nothing to see. And a lone
+    migration gets no summary at all — the reason above already refers to the only file.
+    """
+    pk = f.get("db_package") or {}
     migs = pk.get("migrations") or []
     if migs:
         many = len(migs) > 1
@@ -207,14 +222,12 @@ def db_package_html(f, known=None):
             rows.append(f'<li class="{"ann" if note else ""}">{fpath(mg["path"], known)}'
                         + (f'<div class="sc-note">{E(note)}</div>' if note else "") + "</li>")
         n = len(migs)
-        side = (f'<details class="sidecar"><summary>{n} migration{"s" if n != 1 else ""}'
+        return (f'<details class="sidecar"><summary>{n} migration{"s" if n != 1 else ""}'
                 f'{" · in run order" if many else ""}</summary><ol class="sc-l">{"".join(rows)}</ol></details>')
-    elif pk.get("headline_kind") == "schema":
+    if pk.get("headline_kind") == "schema":
         # Case 3 (§6): the empty sidecar IS the finding. Rendered as a statement, never as a blank.
-        side = '<div class="sidecar sidecar-empty">No migration accompanies this schema change.</div>'
-    else:
-        side = ""
-    return f'<div class="dbp"><b>DB schema change</b>{rs}{side}</div>'
+        return '<div class="sidecar sidecar-empty">No migration accompanies this schema change.</div>'
+    return ""
 
 def finding_card(f, hunks, note=None, known=None):
     """`note` is what the reader last typed into this card's box, replayed from the feedback log.
@@ -265,6 +278,7 @@ def finding_card(f, hunks, note=None, known=None):
     {('<div class="tags">' + "".join(f'<span class="tag">{E(t)}</span>' for t in tags) + '</div>') if tags else ""}
     <div><span class="loc" data-loc="{E(loc)}">⧉ {E(loc)}</span></div>
     {('<details class="more"><summary>Show code</summary>' + code + '</details>') if code else ""}
+    {db_sidecar_html(f, known) if is_db else ""}
     <div class="fb"><button data-t="more">▲ More important</button><button data-t="less">▼ Less important</button><button data-t="noise" class="danger">✕ Noise</button><button data-t="checked">✓ Checked</button></div>
     <div class="fb"><textarea placeholder="Note for the skill (what was wrong / missing / useful)…">{E(note or "")}</textarea></div>
   </div></div>'''

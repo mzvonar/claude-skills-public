@@ -126,6 +126,13 @@ assert len(notes) == 1 and "drops column Post.firmId" in notes[0], notes      # 
 assert "no findings" not in side.lower() and "nothing to see" not in side.lower(), "routine files must be bare filenames"
 assert 'class="ann"' in side and side.count("<li") == 3, "annotated file is a shade less muted; no per-file severity badge"
 assert not re.search(r'<li[^>]*>\s*<span class="pill', side), "no per-file severity badge in the sidecar"
+# Placement: the migrations hang UNDER the headline file's own block, not above the reasons.
+# The headline is what the reader opens first; its migrations are what that schema turned into.
+i_side = card.index('<details class="sidecar">')
+assert i_side > card.index('class="dbp"'), "sidecar must come after the reasons, not interrupt them"
+assert i_side > card.index('class="loc"'), "sidecar must come after the headline file locator"
+if "Show code" in card:
+    assert i_side > card.index("Show code"), "sidecar must hang BELOW the headline file's diff block"
 # §7 — the exclusion trap: sidecar files must NOT reappear in "Everything else".
 unrev = re.search(r'<section id="unreviewed">(.*?)</section>', h, re.S).group(1)
 leaked = [p for p in files + ["prisma/schema.prisma"] if f'data-file="{p}"' in unrev]
