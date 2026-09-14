@@ -160,6 +160,21 @@ cache. Other models and payload sizes will differ — read these as proportions,
 selectively rather than running N=10 everywhere — that is 3x the cost for signal you have
 already located.
 
+**Most of that price is the cached prompt, so do not let the N repeats race for it.** The sweep
+runs sequentially (`P=1`) by design. On one ~226K-token payload a cell cost ~$4.9 cold and $0.65
+warm — 7.6x — but measure before you extrapolate: the cache key covers the **whole** prompt, the
+criterion included, so only the 2nd and 3rd run of the *same* criterion hit it. The first call of
+every new criterion pays full price however you schedule it. That is why the sweep emits all `N`
+runs of one criterion consecutively; keep that order. The saving is therefore `(N-1)/N` of the
+calls: at N=3 sequential averages ~$2.1/cell against ~$4.9 at `P=6` (2.4x), at N=10 ~$1.1 (4.6x).
+Under `P=6` every call is cold, because they all start before any has finished writing. Calls run
+~45–60s, so ten criteria at N=3 is roughly twenty minutes — that wall-clock is what the multiple
+costs. Raise `P` only to buy speed knowingly.
+
+Caching does not blunt the method. It replays a computation; each verdict is still sampled fresh,
+in a context that cannot see the other runs. That is what a SPLIT measures, and the measurements
+behind this skill were themselves made on cached sweeps.
+
 Two things not worth spending on, because they were measured (same corpus, same model) and made
 no difference: **prompt style** (direct / explain / explain-and-fix were within noise across
 1,080 calls — spend on N instead), and separate runs to catch *missing* code as opposed to *wrong* code (an omitted
