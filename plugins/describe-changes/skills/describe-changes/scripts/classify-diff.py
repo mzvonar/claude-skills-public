@@ -256,16 +256,83 @@ REASON_QUESTION = {
 SEV_RANK = {"critical": 0, "medium": 1, "low": 2}
 UNREP_INDEX_RE = re.compile(r"\bUSING\s+(hnsw|ivfflat|gin|gist|spgist|brin)\b", re.I)
 
-def split_sql(text):
-    text = SQL_COMMENT_RE.sub(" ", text)
-    return [s.strip() for s in text.split(";") if s.strip()]
+DOLLAR_TAG_RE = re.compile(r"\$[A-Za-z_]*\$")
+DO_BLOCK_RE = re.compile(r"^\s*DO\s+(\$[A-Za-z_]*\$)(.*)\1\s*$", re.I | re.S)
 
-def sql_ops(text, unmanaged=None, schema_aware=True):
+def _split_top_level(text):
+    """Split on `;`, but never inside a $$…$$ / $tag$…$tag$ body.
+
+    A naive `text.split(";")` shreds a `DO $$ BEGIN … ; … END $$;` block at its INNER semicolons.
+    The fragments then fail every anchored statement regex — a guarded `CREATE INDEX` inside the
+    block registers nowhere — so a re-created index looked dropped-and-never-restored, and the
+    DROP branch reported drift that the very same file disproves."""
+    out, buf, i, tag = [], [], 0, None
+    while i < len(text):
+        if tag:
+            if text.startswith(tag, i):
+                buf.append(tag); i += len(tag); tag = None
+                continue
+        else:
+            m = DOLLAR_TAG_RE.match(text, i)
+            if m:
+                tag = m.group(0); buf.append(tag); i += len(tag)
+                continue
+            if text[i] == ";":
+                out.append("".join(buf)); buf = []; i += 1
+                continue
+        buf.append(text[i]); i += 1
+    out.append("".join(buf))
+    return [s.strip() for s in out if s.strip()]
+
+# Leading PL/pgSQL control that sits between a DO block's body and the DDL inside it. Splitting the
+# body on `;` leaves `BEGIN IF EXISTS (…) THEN CREATE INDEX …`, which every anchored statement
+# regex misses, so the DDL has to be un-nested before it can be classified.
+PLPGSQL_LEAD_RE = re.compile(
+    r"^\s*(?:BEGIN|DECLARE|ELSE|LOOP|END\s+IF|END\s+LOOP|END"
+    r"|(?:ELS)?IF\b.*?\bTHEN|WHILE\b.*?\bLOOP|FOR\b.*?\bLOOP)\b",
+    re.I | re.S)
+PLPGSQL_ONLY_RE = re.compile(
+    r"^\s*(?:BEGIN|END(?:\s+IF|\s+LOOP)?|ELSE|LOOP|RETURN|NULL|COMMIT|ROLLBACK)?\s*$", re.I)
+
+def _unnest_plpgsql(s):
+    prev = None
+    while prev != s:
+        prev = s
+        s = PLPGSQL_LEAD_RE.sub("", s, count=1).strip()
+    return s
+
+def split_sql(text, _depth=0):
+    """Statements of one migration, with `DO` bodies flattened into the statements they contain.
+
+    The block itself is dropped once its body is inlined: a reader cares that the index is created,
+    not that a procedural wrapper created it, and leaving both double-counts the operation."""
+    if _depth == 0:
+        text = SQL_COMMENT_RE.sub(" ", text)
+    stmts = []
+    for s in _split_top_level(text):
+        m = DO_BLOCK_RE.match(s)
+        if m and _depth < 3:
+            inner = [_unnest_plpgsql(x) for x in split_sql(m.group(2), _depth + 1)]
+            inner = [x for x in inner if x and not PLPGSQL_ONLY_RE.match(x)]
+            stmts.extend(inner or [s])
+        else:
+            stmts.append(s)
+    return stmts
+
+def sql_ops(text, unmanaged=None, schema_aware=True, schema_text=""):
     """Ops in one migration's SQL. Each: {kind, severity, phrase, statement, object?, unrep?}.
 
     `unmanaged` is the set of object names the repo declares outside its ORM (config), or None when
     no such config exists — the two modes of §4.3. `schema_aware` is False for a project with no
-    schema artifact, where "not represented in the schema" is not a meaningful claim."""
+    schema artifact, where "not represented in the schema" is not a meaningful claim.
+
+    `schema_text` is the schema artifact's source. It is what decides representation: an object is
+    unrepresented only when the SCHEMA does not name it. Absence from `unmanagedSql` is NOT that
+    test and never was — that list holds what the ORM CANNOT model, so absence from it is evidence
+    the ORM can, i.e. the opposite of drift. Reading it the other way flagged a partial unique index
+    the schema declares outright."""
+    def represented(name):
+        return bool(name) and bool(schema_text) and re.search(r"\b%s\b" % re.escape(name), schema_text)
     ops = []
     stmts = split_sql(text)
     created_tables = {_ident(m.group(1)).lower() for s in stmts
@@ -333,7 +400,12 @@ def sql_ops(text, unmanaged=None, schema_aware=True):
                 name, body = _ident(m.group(1)), m.group(2)
                 if re.search(r"\bFOREIGN\s+KEY\b", body, re.I):
                     if re.search(r"ON\s+(DELETE|UPDATE)\s+(CASCADE|SET\s+NULL|SET\s+DEFAULT)", body, re.I):
-                        add("destructive_ddl", f"adds FK {name} with cascade", s, name)
+                        # Structural, not destructive: adding a constraint loses nothing today, so
+                        # `destructive_ddl`'s question ("what data does this lose?") does not apply.
+                        # The cascade is still worth a reviewer's eye — it decides what FUTURE
+                        # deletes take with them — but three of these inflated the critical count
+                        # on a change whose real losses were the nine DROPPED edges.
+                        add("structural_ddl", f"adds FK {name} with cascade", s, name)
                     else:
                         add("structural_ddl", f"adds FK {name}", s, name)
                 elif re.search(r"\bUNIQUE\b", body, re.I):
@@ -341,6 +413,7 @@ def sql_ops(text, unmanaged=None, schema_aware=True):
                     else: add("structural_ddl", f"unique constraint {name} on existing {table}", s, name)
                 elif re.search(r"\bCHECK\s*\(", body, re.I):
                     if unmanaged is not None and name in unmanaged: add("additive_ddl", f"re-asserts unmanaged CHECK {name}", s, name)
+                    elif represented(name): add("structural_ddl", f"adds CHECK constraint {name} (declared in the schema)", s, name)
                     elif schema_aware: add("unrepresented_ddl", f"adds CHECK constraint {name}", s, name, detected_by="config" if unmanaged is not None else "heuristic")
                     else: add("structural_ddl", f"adds CHECK constraint {name}", s, name)
                 else:
@@ -365,8 +438,10 @@ def sql_ops(text, unmanaged=None, schema_aware=True):
                 what = ("%s index" % UNREP_INDEX_RE.search(u).group(1).lower()) if UNREP_INDEX_RE.search(u) else "partial index"
                 if unmanaged is not None and name in unmanaged:
                     add("additive_ddl", f"re-asserts unmanaged {what} {name}", s, name)
+                elif represented(name):
+                    add("additive_ddl", f"creates {what} {name} (declared in the schema)", s, name)
                 else:
-                    add("unrepresented_ddl", f"creates {what} {name}" + (" (not in unmanagedSql)" if unmanaged is not None else ""), s, name,
+                    add("unrepresented_ddl", f"creates {what} {name} (not in the schema)", s, name,
                         detected_by="config" if unmanaged is not None else "heuristic")
             elif uniq:
                 if on.lower() in created_tables: add("additive_ddl", f"unique index {name} on new table", s, name)
@@ -446,10 +521,19 @@ def db_scan(files, root, cfg):
     if not mig_files and not schema_changed:
         return None
     schema_aware = bool(schema)
+    # The schema as it stands AFTER the change — representation is judged against the file the next
+    # generated migration will read, not against the diff of it.
+    schema_text = ""
+    if schema and root:
+        try:
+            with open(os.path.join(root, schema), errors="replace") as fh:
+                schema_text = fh.read()
+        except OSError:
+            schema_text = ""
     migrations, all_ops = [], []
     for f in mig_files:
         text = "\n".join(l for h in f.hunks for l in h.added)
-        ops = sql_ops(text, unmanaged if unmanaged else None, schema_aware) if ext_of(f.path) == ".sql" else []
+        ops = sql_ops(text, unmanaged if unmanaged else None, schema_aware, schema_text) if ext_of(f.path) == ".sql" else []
         sev = min((o["severity"] for o in ops), key=lambda s: SEV_RANK[s], default=None)
         migrations.append({"path": f.path, "status": f.status, "language": language(f.path), "ops": ops,
                            "severity": sev, "summary": ops_summary(ops)})

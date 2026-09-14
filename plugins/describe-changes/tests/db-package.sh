@@ -436,4 +436,105 @@ assert mirror == m.REASON_SEVERITY, (mirror, m.REASON_SEVERITY)
 print("J units OK")
 PY
 
+# ── K. a DO $$…$$ guard re-creating what it dropped is NOT drift ────────────────────────────────
+# Regression: split_sql() split on every `;`, including those INSIDE a dollar-quoted body, so the
+# guarded CREATE INDEX never matched an anchored statement regex and never reached created_objs.
+# The DROP branch then reported "dropped without re-creating it" about a file that re-creates it
+# four lines down — a false critical on the exact hnsw case the feature exists to catch.
+repo k
+mkdir -p prisma/migrations/1_init .claude
+printf '%s' "$SCHEMA_BASE" > prisma/schema.prisma
+printf 'CREATE TABLE "Post" ("id" TEXT NOT NULL);\n' > prisma/migrations/1_init/migration.sql
+printf '{"prisma-migrate":{"unmanagedSql":[{"name":"Post_embedding_idx","sql":"CREATE INDEX"}]}}' > .claude/claude-skills.json
+commit base
+# the schema moves too, so this case isolates DO-block parsing from the no-schema-diff reason
+printf 'model Extra {\n  id String @id\n}\n' >> prisma/schema.prisma
+mkdir -p prisma/migrations/2_guard
+cat > prisma/migrations/2_guard/migration.sql <<'SQL'
+DROP INDEX "Post_embedding_idx";
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_am WHERE amname = 'hnsw') THEN
+    CREATE INDEX IF NOT EXISTS "Post_embedding_idx" ON "Post" USING hnsw (embedding vector_cosine_ops);
+  END IF;
+END $$;
+SQL
+OUT="$(collect)"
+python3 - "$OUT" <<'PY' || fail "K: model"
+import json, sys, os
+db = json.load(open(os.path.join(sys.argv[1], "diff-model.json")))["db"]
+ops = [o for m in db["migrations"] for o in m["ops"]]
+assert not any(o["kind"] == "unrepresented_ddl" for o in ops), \
+    "a DO-guarded re-create is not drift: " + str([o["phrase"] for o in ops])
+assert any("re-asserts unmanaged" in o["phrase"] for o in ops), [o["phrase"] for o in ops]
+assert not any("not classified" in o["phrase"] for o in ops), \
+    "the DO body must be parsed, not shrugged at: " + str([o["phrase"] for o in ops])
+assert not any(x["kind"] == "unrepresented_ddl" for x in db["reasons"]), db["reasons"]
+print("K model OK")
+PY
+echo "K DO-block guard OK"
+
+# ── L. an object the SCHEMA declares is represented, whatever unmanagedSql says ─────────────────
+# Regression: representation was tested as "absent from unmanagedSql" — the inverted inference.
+# That list holds what the ORM CANNOT model, so absence from it argues the ORM CAN. A partial
+# unique index declared right there in schema.prisma was reported as critical drift.
+repo l
+mkdir -p prisma/migrations/1_init
+printf '%s' "$SCHEMA_BASE" > prisma/schema.prisma
+printf 'CREATE TABLE "Post" ("id" TEXT NOT NULL);\n' > prisma/migrations/1_init/migration.sql
+commit base
+printf 'model Engagement {\n  id String @id\n  @@unique([orgId], map: "eng_active_org_key")\n}\n' >> prisma/schema.prisma
+mkdir -p prisma/migrations/2_partial
+printf 'CREATE UNIQUE INDEX "eng_active_org_key" ON "Engagement"("orgId") WHERE ("endedAt" IS NULL);\n' > prisma/migrations/2_partial/migration.sql
+OUT="$(collect)"
+python3 - "$OUT" <<'PY' || fail "L: model"
+import json, sys, os
+db = json.load(open(os.path.join(sys.argv[1], "diff-model.json")))["db"]
+ops = [o for m in db["migrations"] for o in m["ops"]]
+op = next(o for o in ops if o.get("object") == "eng_active_org_key")
+assert op["kind"] != "unrepresented_ddl", "the schema declares it; that is the test, not unmanagedSql"
+assert "declared in the schema" in op["phrase"], op
+assert not any(x["kind"] == "unrepresented_ddl" for x in db["reasons"]), db["reasons"]
+print("L model OK")
+PY
+# the inverse must still fire: an object the schema does NOT name is drift
+repo l2
+mkdir -p prisma/migrations/1_init
+printf '%s' "$SCHEMA_BASE" > prisma/schema.prisma
+printf 'CREATE TABLE "Post" ("id" TEXT NOT NULL);\n' > prisma/migrations/1_init/migration.sql
+commit base
+printf 'model Other {\n  id String @id\n}\n' >> prisma/schema.prisma
+mkdir -p prisma/migrations/2_partial
+printf 'CREATE UNIQUE INDEX "nowhere_in_schema_key" ON "Post"("id") WHERE ("deletedAt" IS NULL);\n' > prisma/migrations/2_partial/migration.sql
+OUT="$(collect)"
+python3 - "$OUT" <<'PY' || fail "L2: model"
+import json, sys, os
+db = json.load(open(os.path.join(sys.argv[1], "diff-model.json")))["db"]
+ops = [o for m in db["migrations"] for o in m["ops"]]
+op = next(o for o in ops if o.get("object") == "nowhere_in_schema_key")
+assert op["kind"] == "unrepresented_ddl" and op["severity"] == "critical", op
+print("L2 model OK")
+PY
+echo "L schema-representation OK"
+
+# ── M. adding an FK loses nothing — structural, not destructive ─────────────────────────────────
+repo m
+mkdir -p prisma/migrations/1_init
+printf '%s' "$SCHEMA_BASE" > prisma/schema.prisma
+printf 'CREATE TABLE "Post" ("id" TEXT NOT NULL);\n' > prisma/migrations/1_init/migration.sql
+commit base
+printf 'model Extra {\n  id String @id\n}\n' >> prisma/schema.prisma
+mkdir -p prisma/migrations/2_fk
+printf 'ALTER TABLE "Post" ADD CONSTRAINT "Post_firmId_fkey" FOREIGN KEY ("firmId") REFERENCES "Firm"("id") ON DELETE CASCADE;\n' > prisma/migrations/2_fk/migration.sql
+OUT="$(collect)"
+python3 - "$OUT" <<'PY' || fail "M: model"
+import json, sys, os
+db = json.load(open(os.path.join(sys.argv[1], "diff-model.json")))["db"]
+op = next(o for m in db["migrations"] for o in m["ops"] if o.get("object") == "Post_firmId_fkey")
+assert op["kind"] == "structural_ddl", "adding a constraint loses no data: " + str(op)
+assert db["severity"] != "critical", db["severity"]
+print("M model OK")
+PY
+echo "M add-FK severity OK"
+
 echo "DB PACKAGE TESTS PASSED"

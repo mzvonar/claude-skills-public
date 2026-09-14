@@ -176,6 +176,23 @@ heuristic hit can be discounted:
   partial indexes, triggers, functions, views, policies, CHECK constraints). False positives happen;
   a missed drift is worse.
 
+**Two traps that made every one of these fire falsely on their first real diff:**
+
+- **The schema is what decides representation — not `unmanagedSql`.** That list holds what the ORM
+  *cannot* model, so absence from it is evidence the ORM *can*: the opposite of drift. An object
+  whose name appears in the schema artifact is represented, whatever the list says. Reading it the
+  other way reported a partial unique index that `schema.prisma` declares outright as critical drift.
+- **A `DO $$ … $$` guard is one statement, and its body counts.** Splitting a migration on every `;`
+  shreds the block at its inner semicolons, so a guarded `CREATE INDEX` matches no anchored
+  statement regex and never registers as created — and the `DROP` four lines above it is then
+  reported as "dropped without re-creating it" by a file that plainly re-creates it. The body is
+  un-nested and classified; the wrapper itself is dropped so the operation is not counted twice.
+
+Adding a constraint is `structural_ddl`, never `destructive_ddl`: it loses no data today, so
+"what does this lose?" does not apply. A cascade on a NEW foreign key decides what *future* deletes
+take with them — real, but not the question, and three of them once outranked the nine dropped
+edges that were the actual loss.
+
 The schema legitimately appears in a **phase** too, as shape ("Organization becomes the tenant
 root"); the package in the findings carries **risk** ("drops 9 cascade edges; verify the backfill
 predicate and its ordering"). If the two would read identically, the package's text is wrong —
