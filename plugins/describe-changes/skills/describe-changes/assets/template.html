@@ -228,6 +228,30 @@ button.fpath:active{border-color:var(--info)}
 .unrev .row.fold-row{cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
 .unrev h3.area{font-size:.7rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--fg3);margin:1.1rem 0 .2rem}
 .unrev h3.area .cnt{font-weight:400;letter-spacing:0;text-transform:none}
+.unrev .area-empty{padding:.2rem 0 .4rem;font-size:.8rem}
+/* DB schema package — one finding that owns the whole database change. The reasons carry the
+   alarm; the sidecar of migration files is deliberately MUTED and smaller than the headline, with
+   no per-file severity and no per-file colour: the only per-file signal is whether a one-line
+   summary sits under the filename. Files that carry one are a shade less muted than bare ones. */
+.dbtag{display:inline-block;font-family:inherit;font-size:.66rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--info);border:1px solid rgba(99,179,237,.4);border-radius:5px;padding:.05rem .4rem;margin-right:.45rem;vertical-align:1px}
+.dbp{font-size:.9rem;color:var(--fg2)}
+.dbp>b{color:var(--fg);display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.35rem}
+.dbp-rs{list-style:none;margin:0;padding:0}
+.dbp-rs>li+li{margin-top:.55rem;padding-top:.55rem;border-top:1px dashed var(--line)}
+.dbp-r .pill{margin-right:.45rem;text-transform:uppercase}
+.dbp-k{font-weight:600;color:var(--fg)}
+.dbp-q{margin-top:.25rem;color:var(--fg);font-size:.92rem}
+.dbp-d{margin-top:.2rem;font-size:.85rem;color:var(--fg2)}
+.dbp-by{margin-top:.2rem;font-size:.75rem;color:var(--fg3)}
+.sidecar{margin-top:.7rem;padding-top:.5rem;border-top:1px solid var(--line);font-size:.78rem;color:var(--fg3)}
+.sidecar summary{cursor:pointer;color:var(--fg3);font-size:.78rem;padding:.15rem 0}
+.sidecar summary:hover{color:var(--fg2)}
+.sidecar-empty{color:var(--fg2);font-style:italic}
+.sc-l{margin:.35rem 0 0;padding-left:1.4rem;font-family:var(--mono)}
+.sc-l li{margin:.25rem 0;opacity:.72}
+.sc-l li.ann{opacity:.9}
+.sc-l button.fpath{font-size:.68rem;padding:.1rem .4rem;opacity:1}
+.sc-note{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:.74rem;color:var(--fg2);margin:.1rem 0 0 .1rem}
 .unrev .row .tw{font-size:.7rem}
 .unrev .row.open .tw{transform:rotate(90deg)}
 .unrev .row .rp{word-break:break-all}

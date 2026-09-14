@@ -101,9 +101,26 @@ def language(path):
 
 
 # ---------------------------------------------------------------- area
-# Which of three reading registers a file belongs to, so the report's "Everything else" list can put
-# code first and let the reader skim or skip tooling and docs. Tooling is decided BEFORE docs so a
-# skill's SKILL.md or a CLAUDE.md counts as tooling, not prose. Anything unrecognised is code.
+# Which of FOUR reading registers a file belongs to, so the report's "Everything else" list can put
+# code first and let the reader skim or skip the rest. The order of the checks IS the rule — a file
+# lands in the first bucket that matches — and it is mandatory: without a fixed precedence a `.sql`
+# fixture under tests/ or a CI YAML lands differently between runs and the grouping looks unstable.
+#
+#   1. tests    — a test dir segment in the path, a *.test.* / *.spec.* / *_test.* / conftest.py
+#                 basename, or a fixture/snapshot under a test dir (covered by the segment rule)
+#   2. tooling  — dotfiles and dot-dirs, CI configs, manifests, lockfiles, Dockerfile/Makefile,
+#                 *.config.*, root-level *.yml/*.yaml, root-level scripts/
+#   3. docs     — *.md/*.mdx/*.rst/*.txt, LICENSE-class names, anything under docs/
+#   4. code     — everything else; the default, never empty by rule
+#
+# Tests come first because "did they test it?" is the commonest question asked of the remainder,
+# and an EMPTY tests bucket must be visible at a glance — folding tests into code hides exactly
+# that. Tooling is decided BEFORE docs so a skill's SKILL.md or a CLAUDE.md counts as tooling, not
+# prose. The same table lives in reference/analysis-guide.md; this function is the implementation.
+TEST_DIRS = {"tests", "test", "__tests__", "spec", "specs", "e2e", "__fixtures__", "fixtures", "__snapshots__", "__mocks__"}
+# `*.test.*` names a TEST only for code; `docker-compose.test.yml` / `app.test.json` are configs
+# named after an environment, so config extensions are excluded from the basename rule.
+TEST_BASENAME_RE = re.compile(r"(^|[._-])(test|spec|tests|specs)\.(?!ya?ml$|json$|toml$|ini$|env$|cfg$)[^.]+$|^conftest\.py$|_test\.[^.]+$|^test_[^/]+\.py$", re.I)
 TOOLING_DIRS = (".claude/", ".agents/", ".cursor/", ".codex/", ".github/", ".gitlab/", ".husky/", ".vscode/",
                 ".idea/", ".devcontainer/", ".circleci/", ".buildkite/")
 TOOLING_NAMES = {"CLAUDE.md", "AGENTS.md", ".gitlab-ci.yml", "Dockerfile", "Makefile", "Justfile", "justfile",
@@ -115,14 +132,374 @@ TOOLING_NAMES = {"CLAUDE.md", "AGENTS.md", ".gitlab-ci.yml", "Dockerfile", "Make
 DOC_DIRS = ("docs/", "doc/", "wiki/", "_bmad-output/", ".planning/", "adr/", "rfcs/")
 DOC_EXT = {".md", ".mdx", ".rst", ".adoc", ".txt"}
 
+AREAS = ("code", "tests", "tooling", "docs")
+
 def area(path):
     p = path.replace("\\", "/"); base = p.rsplit("/", 1)[-1]; e = ext_of(p)
-    if p.startswith(TOOLING_DIRS) or base in TOOLING_NAMES: return "tooling"
+    segs = p.split("/")[:-1]
+    if any(s in TEST_DIRS for s in segs) or TEST_BASENAME_RE.search(base): return "tests"
+    if p.startswith(TOOLING_DIRS) or base in TOOLING_NAMES or base in LOCKFILES: return "tooling"
+    if base.startswith(".") and "/" not in p: return "tooling"                       # a root dotfile
+    if e in (".yml", ".yaml") and "/" not in p: return "tooling"                       # root-level CI/config YAML
+    if p.startswith("scripts/"): return "tooling"                                      # repo-root scripts/
     if re.match(r"^(docker-compose[\w.-]*\.ya?ml|compose[\w.-]*\.ya?ml|tsconfig[\w.-]*\.json|\.[\w-]+rc(\.[\w]+)?|[\w.-]+\.config\.[cm]?[jt]s|lint-staged\.config\.[cm]?js)$", base):
         return "tooling"
     if base.split(".")[0].upper() in {"README", "CHANGELOG", "LICENSE", "CONTRIBUTING", "CODEOWNERS", "SECURITY", "NOTICE"}: return "docs"
     if e in DOC_EXT or p.startswith(DOC_DIRS): return "docs"
     return "code"
+
+
+# ---------------------------------------------------------------- db schema package
+# The database change is ONE thing to review, however many files carry it: the authored schema
+# artifact is the headline, its migrations are a sidecar. Everything mechanical about it lives
+# here — which files, in what order, what the SQL does, how severe that is — so the analyst copies
+# facts rather than inventing them, and the validator can hold the report to them.
+#
+# Nothing here is Prisma-shaped. A project with no schema concept (raw SQL files, an ORM with
+# migrations only) is the second branch of one rule: the migrations themselves become the headline.
+SCHEMA_CONVENTIONS = ("prisma/schema.prisma", "db/schema.rb", "schema.sql", "db/schema.sql", "db/structure.sql")
+SCHEMA_BASENAMES = {"schema.prisma", "schema.rb"}
+MIGRATION_DIR_SEGS = {"migrations", "migrate", "migration"}
+MIGRATION_LOCK_RE = re.compile(r"(^|/)migration_lock\.[\w]+$")
+CONFIG_FILE = ".claude/claude-skills.json"
+
+def load_skill_config(root):
+    """The consuming repo's `.claude/claude-skills.json`, or {} — never an error."""
+    if not root: return {}
+    try:
+        with open(os.path.join(root, CONFIG_FILE), encoding="utf-8") as fh:
+            cfg = json.load(fh)
+        return cfg if isinstance(cfg, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+def _norm_rel(p):
+    return p.replace("\\", "/").strip("/") if p else p
+
+def db_layout(root, paths, cfg):
+    """(schema_artifact, is_configured, migration_dirs) for this repo.
+
+    `schema_artifact` is a repo-relative path or None. Convention first (the file must EXIST on
+    disk or arrive in this diff), then the override in `describe-changes.schemaArtifact`. A
+    configured path wins even when it does not exist yet — a typo in the config should be visible
+    as "no schema change" plus a migration package, not silently replaced by a convention."""
+    dc = cfg.get("describe-changes") or {}
+    paths = set(paths)
+    def present(rel): return rel in paths or (root and os.path.isfile(os.path.join(root, rel)))
+    schema = _norm_rel(dc.get("schemaArtifact")) if isinstance(dc.get("schemaArtifact"), str) else None
+    if not schema:
+        for cand in SCHEMA_CONVENTIONS:
+            if present(cand): schema = cand; break
+    if not schema:
+        # `**/schema.prisma` — anywhere, from the index or the diff
+        hits = sorted(p for p in paths if p.rsplit("/", 1)[-1] in SCHEMA_BASENAMES)
+        if not hits and root:
+            try:
+                import subprocess
+                out = subprocess.run(["git", "-C", root, "ls-files", "-z", "--", "*schema.prisma", "*schema.rb"],
+                                     capture_output=True, text=True, timeout=10)
+                hits = sorted(p for p in out.stdout.split("\0") if p and p.rsplit("/", 1)[-1] in SCHEMA_BASENAMES)
+            except Exception:
+                hits = []
+        schema = hits[0] if hits else None
+    mig = dc.get("migrationsDir")
+    mig_dirs = [_norm_rel(m) for m in (mig if isinstance(mig, list) else [mig]) if isinstance(m, str) and m]
+    return schema, bool(dc.get("schemaArtifact")), mig_dirs
+
+def is_migration_path(path, mig_dirs):
+    """Under a configured migrations dir, or under a conventional one (any depth), or a *.sql
+    whose path carries a migration segment. Lock/metadata files inside the dir are not migrations."""
+    p = path.replace("\\", "/")
+    if MIGRATION_LOCK_RE.search(p): return False
+    for d in mig_dirs:
+        if p.startswith(d + "/"): return True
+    if mig_dirs: return False                         # an override REPLACES the convention
+    segs = p.split("/")[:-1]
+    if any(s.lower() in MIGRATION_DIR_SEGS for s in segs): return True
+    return False
+
+def unmanaged_sql(cfg):
+    """(names, source): objects the repo declares as outside the ORM's model, and which key said so."""
+    for key in ("describe-changes", "prisma-migrate"):
+        items = (cfg.get(key) or {}).get("unmanagedSql")
+        if isinstance(items, list) and items:
+            names = set()
+            for it in items:
+                if isinstance(it, dict) and it.get("name"): names.add(str(it["name"]).strip('"'))
+                elif isinstance(it, str): names.add(it.strip('"'))
+            if names: return names, key
+    return set(), None
+
+# --- SQL operations ------------------------------------------------------------------------------
+# A small, honest parser: statements split on `;` with comments stripped, each matched against the
+# handful of shapes that decide severity. It does not understand SQL; it recognises the verbs a
+# reviewer is paid to notice. Every op it emits quotes the statement it came from, which is what
+# lets the per-file summary line satisfy "every operation named must literally appear in the file".
+SQL_COMMENT_RE = re.compile(r"--[^\n]*|/\*.*?\*/", re.S)
+IDENT = r'"?([\w$.]+)"?'
+def _ident(s): return (s or "").strip('"').split(".")[-1]
+
+REASON_SEVERITY = {          # §4.2 — the ONE place a reason's severity is decided (§12 tunes here)
+    "destructive_ddl": "critical", "unrepresented_ddl": "critical", "data_mutation": "critical",
+    "schema_migration_drift": "critical", "ordering": "medium", "structural_ddl": "medium",
+    "additive_ddl": "low",
+}
+REASON_QUESTION = {
+    "destructive_ddl": "What data does this lose, and is it recoverable?",
+    "unrepresented_ddl": "Will it survive the next generated migration?",
+    "data_mutation": "Does the predicate match the intended rows, and is it idempotent?",
+    "ordering": "Does the backfill run before or after the structural change?",
+    "schema_migration_drift": "Why is there no migration?",
+    "structural_ddl": "Is the new structure the intended shape, and does existing data satisfy it?",
+    "additive_ddl": "Is anything here more than additive?",
+}
+SEV_RANK = {"critical": 0, "medium": 1, "low": 2}
+UNREP_INDEX_RE = re.compile(r"\bUSING\s+(hnsw|ivfflat|gin|gist|spgist|brin)\b", re.I)
+
+def split_sql(text):
+    text = SQL_COMMENT_RE.sub(" ", text)
+    return [s.strip() for s in text.split(";") if s.strip()]
+
+def sql_ops(text, unmanaged=None, schema_aware=True):
+    """Ops in one migration's SQL. Each: {kind, severity, phrase, statement, object?, unrep?}.
+
+    `unmanaged` is the set of object names the repo declares outside its ORM (config), or None when
+    no such config exists — the two modes of §4.3. `schema_aware` is False for a project with no
+    schema artifact, where "not represented in the schema" is not a meaningful claim."""
+    ops = []
+    stmts = split_sql(text)
+    created_tables = {_ident(m.group(1)).lower() for s in stmts
+                      for m in [re.match(r"\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?" + IDENT, s, re.I)] if m}
+    defaults = set()      # (table, column) that receive a DEFAULT somewhere in the file
+    for s in stmts:
+        for m in re.finditer(r"ALTER\s+TABLE\s+(?:ONLY\s+)?" + IDENT + r".*?ALTER\s+(?:COLUMN\s+)?" + IDENT + r"\s+SET\s+DEFAULT", s, re.I | re.S):
+            defaults.add((_ident(m.group(1)).lower(), _ident(m.group(2)).lower()))
+    created_objs = set()  # names CREATEd in this file (index/trigger/view/function/constraint)
+    for s in stmts:
+        m = re.match(r"\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:UNIQUE\s+)?(?:MATERIALIZED\s+)?(?:INDEX|TRIGGER|VIEW|FUNCTION|POLICY)\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?" + IDENT, s, re.I)
+        if m: created_objs.add(_ident(m.group(1)))
+        for m2 in re.finditer(r"ADD\s+CONSTRAINT\s+" + IDENT, s, re.I): created_objs.add(_ident(m2.group(1)))
+
+    def add(kind, phrase, stmt, obj=None, **extra):
+        ops.append(dict(kind=kind, severity=REASON_SEVERITY[kind], phrase=phrase, object=obj,
+                        statement=re.sub(r"\s+", " ", stmt)[:160], **extra))
+
+    for s in stmts:
+        u = re.sub(r"\s+", " ", s)
+        head = u[:40].upper()
+        # ---- DML
+        m = re.match(r"(UPDATE|INSERT INTO|DELETE FROM|MERGE INTO)\s+" + IDENT, u, re.I)
+        if m:
+            verb = m.group(1).split()[0].upper()
+            add("data_mutation", f"runs {verb} on {_ident(m.group(2))}", s, _ident(m.group(2)), verb=verb); continue
+        if head.startswith("TRUNCATE"):
+            m = re.match(r"TRUNCATE\s+(?:TABLE\s+)?" + IDENT, u, re.I)
+            add("destructive_ddl", f"truncates {_ident(m.group(1)) if m else 'a table'}", s); continue
+        # ---- destructive DDL
+        m = re.match(r"DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?" + IDENT, u, re.I)
+        if m: add("destructive_ddl", f"drops table {_ident(m.group(1))}", s, _ident(m.group(1))); continue
+        tm = re.match(r"ALTER\s+TABLE\s+(?:ONLY\s+)?(?:IF\s+EXISTS\s+)?" + IDENT, u, re.I)
+        table = _ident(tm.group(1)) if tm else None
+        if tm:
+            n_before = len(ops)
+            # `DROP col` is legal without the COLUMN keyword, so exclude the other DROP forms that
+            # live inside an ALTER TABLE: `ALTER COLUMN x DROP NOT NULL|DEFAULT|IDENTITY|EXPRESSION`.
+            for m in re.finditer(r"DROP\s+(?!NOT\b|DEFAULT\b|CONSTRAINT\b|IDENTITY\b|EXPRESSION\b)(?:COLUMN\s+)?(?:IF\s+EXISTS\s+)?" + IDENT, u, re.I):
+                add("destructive_ddl", f"drops column {table}.{_ident(m.group(1))}", s, table)
+            for m in re.finditer(r"DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?" + IDENT, u, re.I):
+                name = _ident(m.group(1))
+                if unmanaged is not None and name in unmanaged and name not in created_objs:
+                    add("unrepresented_ddl", f"drops unmanaged constraint {name} without re-creating it", s, name, detected_by="config")
+                elif re.search(r"_fkey$|_fk$|foreign", name, re.I):
+                    add("destructive_ddl", f"drops FK constraint {name}", s, name)
+                else:
+                    add("additive_ddl", f"drops constraint {name}", s, name)
+            for m in re.finditer(r"ALTER\s+(?:COLUMN\s+)?" + IDENT + r"\s+SET\s+NOT\s+NULL", u, re.I):
+                col = _ident(m.group(1))
+                if (table.lower(), col.lower()) in defaults:
+                    add("additive_ddl", f"sets {table}.{col} NOT NULL (with a default)", s, table)
+                else:
+                    add("destructive_ddl", f"sets {table}.{col} NOT NULL without a default", s, table)
+            for m in re.finditer(r"ALTER\s+(?:COLUMN\s+)?" + IDENT + r"\s+(?:SET\s+DATA\s+)?TYPE\s+([\w\s()\[\],]+?)(?:\s+USING|,|$)", u, re.I):
+                add("destructive_ddl", f"changes type of {table}.{_ident(m.group(1))} to {m.group(2).strip()}", s, table)
+            for m in re.finditer(r"ADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?" + IDENT + r"\s+([^,]+?)(?:,\s*ADD|$)", u, re.I):
+                if re.match(r"ADD\s+CONSTRAINT", m.group(0), re.I): continue
+                col, rest = _ident(m.group(1)), m.group(2)
+                if re.search(r"\bNOT\s+NULL\b", rest, re.I) and not re.search(r"\bDEFAULT\b", rest, re.I) and table.lower() not in created_tables:
+                    add("destructive_ddl", f"adds NOT NULL column {table}.{col} without a default", s, table)
+                else:
+                    add("additive_ddl", f"adds column {table}.{col}", s, table)
+            for m in re.finditer(r"ADD\s+CONSTRAINT\s+" + IDENT + r"\s+(.+?)(?=,\s*ADD\s+CONSTRAINT|$)", u, re.I):
+                name, body = _ident(m.group(1)), m.group(2)
+                if re.search(r"\bFOREIGN\s+KEY\b", body, re.I):
+                    if re.search(r"ON\s+(DELETE|UPDATE)\s+(CASCADE|SET\s+NULL|SET\s+DEFAULT)", body, re.I):
+                        add("destructive_ddl", f"adds FK {name} with cascade", s, name)
+                    else:
+                        add("structural_ddl", f"adds FK {name}", s, name)
+                elif re.search(r"\bUNIQUE\b", body, re.I):
+                    if table.lower() in created_tables: add("additive_ddl", f"unique constraint {name} on new table", s, name)
+                    else: add("structural_ddl", f"unique constraint {name} on existing {table}", s, name)
+                elif re.search(r"\bCHECK\s*\(", body, re.I):
+                    if unmanaged is not None and name in unmanaged: add("additive_ddl", f"re-asserts unmanaged CHECK {name}", s, name)
+                    elif schema_aware: add("unrepresented_ddl", f"adds CHECK constraint {name}", s, name, detected_by="config" if unmanaged is not None else "heuristic")
+                    else: add("structural_ddl", f"adds CHECK constraint {name}", s, name)
+                else:
+                    add("structural_ddl", f"adds constraint {name}", s, name)
+            for m in re.finditer(r"ALTER\s+(?:COLUMN\s+)?" + IDENT + r"\s+DROP\s+NOT\s+NULL", u, re.I):
+                add("additive_ddl", f"drops NOT NULL on {table}.{_ident(m.group(1))}", s, table)
+            if len(ops) == n_before:
+                add("additive_ddl", f"alters table {table}", s, table)
+            continue
+        m = re.match(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?" + IDENT, u, re.I)
+        if m:
+            add("structural_ddl", f"creates table {_ident(m.group(1))}", s, _ident(m.group(1)))
+            if schema_aware and re.search(r"\bCHECK\s*\(", u, re.I):
+                add("unrepresented_ddl", f"CHECK constraint inside table {_ident(m.group(1))}", s, _ident(m.group(1)),
+                    detected_by="config" if unmanaged is not None else "heuristic")
+            continue
+        m = re.match(r"CREATE\s+(UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?" + IDENT + r"\s+ON\s+(?:ONLY\s+)?" + IDENT, u, re.I)
+        if m:
+            uniq, name, on = bool(m.group(1)), _ident(m.group(2)), _ident(m.group(3))
+            special = UNREP_INDEX_RE.search(u) or re.search(r"\)\s*WHERE\s+", u, re.I)
+            if special and schema_aware:
+                what = ("%s index" % UNREP_INDEX_RE.search(u).group(1).lower()) if UNREP_INDEX_RE.search(u) else "partial index"
+                if unmanaged is not None and name in unmanaged:
+                    add("additive_ddl", f"re-asserts unmanaged {what} {name}", s, name)
+                else:
+                    add("unrepresented_ddl", f"creates {what} {name}" + (" (not in unmanagedSql)" if unmanaged is not None else ""), s, name,
+                        detected_by="config" if unmanaged is not None else "heuristic")
+            elif uniq:
+                if on.lower() in created_tables: add("additive_ddl", f"unique index {name} on new table", s, name)
+                else: add("structural_ddl", f"unique index {name} on existing {on}", s, name)
+            else:
+                add("additive_ddl", f"creates index {name}", s, name)
+            continue
+        m = re.match(r"DROP\s+INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+EXISTS\s+)?" + IDENT, u, re.I)
+        if m:
+            name = _ident(m.group(1))
+            if unmanaged is not None and name in unmanaged and name not in created_objs:
+                add("unrepresented_ddl", f"drops unmanaged index {name} without re-creating it", s, name, detected_by="config")
+            else:
+                add("additive_ddl", f"drops index {name}", s, name)
+            continue
+        m = re.match(r"CREATE\s+(?:OR\s+REPLACE\s+)?(TRIGGER|FUNCTION|(?:MATERIALIZED\s+)?VIEW|POLICY)\s+(?:IF\s+NOT\s+EXISTS\s+)?" + IDENT, u, re.I)
+        if m:
+            kind, name = m.group(1).lower().replace("materialized ", "materialized "), _ident(m.group(2))
+            if schema_aware and not (unmanaged is not None and name in unmanaged):
+                add("unrepresented_ddl", f"creates {kind} {name}", s, name, detected_by="config" if unmanaged is not None else "heuristic")
+            else:
+                add("additive_ddl", f"creates {kind} {name}", s, name)
+            continue
+        m = re.match(r"DROP\s+(TRIGGER|FUNCTION|(?:MATERIALIZED\s+)?VIEW|POLICY)\s+(?:IF\s+EXISTS\s+)?" + IDENT, u, re.I)
+        if m:
+            name = _ident(m.group(2))
+            if unmanaged is not None and name in unmanaged and name not in created_objs:
+                add("unrepresented_ddl", f"drops unmanaged {m.group(1).lower()} {name} without re-creating it", s, name, detected_by="config")
+            else:
+                add("additive_ddl", f"drops {m.group(1).lower()} {name}", s, name)
+            continue
+        if re.match(r"(CREATE|ALTER|DROP)\s+(TYPE|SEQUENCE|SCHEMA|EXTENSION|ENUM|DOMAIN)\b", u, re.I):
+            add("additive_ddl", u.split("(")[0][:50].lower(), s); continue
+        # anything else: unknown statement, recorded so the reader can see it was not understood
+        if re.match(r"(CREATE|ALTER|DROP|RENAME|COMMENT|GRANT|REVOKE|SET|BEGIN|COMMIT|DO)\b", u, re.I):
+            add("additive_ddl", "statement not classified: " + u[:40].lower(), s)
+    return ops
+
+SUMMARY_GROUP_RE = re.compile(r"^(drops|adds|creates|sets|changes|runs|truncates)\s+"
+                              r"(FK constraint|NOT NULL column|CHECK constraint|unique index|unique constraint|type of|"
+                              r"column|table|index|constraint|UPDATE|INSERT|DELETE|MERGE)\b")
+PLURAL = {"type of": "column types", "NOT NULL column": "NOT NULL columns", "unique index": "unique indexes",
+          "unique constraint": "unique constraints", "FK constraint": "FK constraints",
+          "CHECK constraint": "CHECK constraints", "index": "indexes", "UPDATE": "UPDATEs", "INSERT": "INSERTs",
+          "DELETE": "DELETEs", "MERGE": "MERGEs"}
+
+def ops_summary(ops, cap=100):
+    """The per-file one-liner (§5): the operations, not the severity. Only ops at critical/medium
+    are named — a low-only file gets no line, because a bare filename means nothing to see.
+    `drops column a.x; drops column a.y` collapses to `drops 2 columns`; a lone op keeps its phrase,
+    which quotes the object the statement names."""
+    keep = [o for o in ops if SEV_RANK[o["severity"]] <= SEV_RANK["medium"]]
+    if not keep: return None
+    groups = {}
+    for o in keep:
+        m = SUMMARY_GROUP_RE.match(o["phrase"])
+        key = (m.group(1), m.group(2)) if m else (o["phrase"], None)
+        groups.setdefault(key, []).append(o["phrase"])
+    parts = []
+    for (verb, noun), phrases in groups.items():
+        if len(phrases) == 1 or noun is None: parts.append(phrases[0])
+        else: parts.append(f"{verb} {len(phrases)} {PLURAL.get(noun, noun + 's')}")
+    line = "; ".join(parts)
+    return line if len(line) <= cap else line[:cap - 1].rstrip() + "…"
+
+def db_scan(files, root, cfg):
+    """The DB package as facts: headline, ordered migrations with their ops, the reasons the SQL
+    supports, and the package severity. None when the diff touches no DB file.
+
+    `files` are parsed FileDiffs. Only the ADDED side of a migration is parsed — a migration is
+    normally an added file, and for an edited one the added lines are what changed."""
+    paths = [f.path for f in files]
+    schema, schema_cfg, mig_dirs = db_layout(root, paths, cfg)
+    unmanaged, unmanaged_src = unmanaged_sql(cfg)
+    mig_files = sorted((f for f in files if is_migration_path(f.path, mig_dirs)), key=lambda f: f.path)
+    schema_changed = bool(schema) and schema in paths
+    if not mig_files and not schema_changed:
+        return None
+    schema_aware = bool(schema)
+    migrations, all_ops = [], []
+    for f in mig_files:
+        text = "\n".join(l for h in f.hunks for l in h.added)
+        ops = sql_ops(text, unmanaged if unmanaged else None, schema_aware) if ext_of(f.path) == ".sql" else []
+        sev = min((o["severity"] for o in ops), key=lambda s: SEV_RANK[s], default=None)
+        migrations.append({"path": f.path, "status": f.status, "language": language(f.path), "ops": ops,
+                           "severity": sev, "summary": ops_summary(ops)})
+        all_ops += [dict(o, path=f.path) for o in ops]
+    reasons = []
+    def reason(kind, detail, **extra):
+        reasons.append(dict(kind=kind, severity=REASON_SEVERITY[kind], question=REASON_QUESTION[kind], detail=detail, **extra))
+    by_kind = {}
+    for o in all_ops: by_kind.setdefault(o["kind"], []).append(o)
+    def listing(ops, n=6):
+        seen = list(dict.fromkeys(o["phrase"] for o in ops))
+        return "; ".join(seen[:n]) + (f"; +{len(seen) - n} more" if len(seen) > n else "")
+    if "destructive_ddl" in by_kind:
+        reason("destructive_ddl", listing(by_kind["destructive_ddl"]) + ".")
+    # Case 2 (§6): migrations with DDL but NO schema diff, in a project that HAS a schema artifact.
+    # That is genuine drift — the ORM does not know these objects exist and its next generated
+    # migration can drop them. Distinct from a DML-only backfill, which correctly has no schema diff.
+    ddl = [o for o in all_ops if o["kind"] != "data_mutation"]
+    if schema_aware and mig_files and not schema_changed and ddl:
+        reason("unrepresented_ddl", f"{schema} did not change in this diff, so the schema does not describe what these "
+               f"migrations do: {listing(ddl)}. The next generated migration can silently undo it.", detected_by="no_schema_diff")
+    elif "unrepresented_ddl" in by_kind:
+        # `detected_by` carries the mechanism; the renderer spells it out under the reason, so the
+        # detail stays the list of statements and does not say it twice.
+        by = sorted({o.get("detected_by", "heuristic") for o in by_kind["unrepresented_ddl"]})
+        reason("unrepresented_ddl", listing(by_kind["unrepresented_ddl"]) + ".", detected_by=by[0] if len(by) == 1 else "config")
+    if "data_mutation" in by_kind:
+        reason("data_mutation", listing(by_kind["data_mutation"]) + ".")
+    dml_files = {o["path"] for o in by_kind.get("data_mutation", [])}
+    ddl_files = {o["path"] for o in all_ops if o["kind"] in ("destructive_ddl", "structural_ddl")}
+    if len(mig_files) >= 2 and dml_files and (ddl_files - dml_files):
+        order = [m["path"].rsplit("/", 2)[-2] if "/" in m["path"] else m["path"] for m in migrations if m["path"] in dml_files | ddl_files]
+        reason("ordering", "Data and structure change in different migrations; they run in this order: " + " → ".join(order) + ".")
+    if schema_changed and not mig_files:
+        reason("schema_migration_drift", f"{schema} changed but no migration is in this diff.")
+    if "structural_ddl" in by_kind:
+        reason("structural_ddl", listing(by_kind["structural_ddl"]) + ".")
+    if "additive_ddl" in by_kind:
+        reason("additive_ddl", listing(by_kind["additive_ddl"]) + ".")
+    if not reasons:
+        # A schema-less migration in a language the parser does not read (rb/ts/py), or a schema
+        # change with a non-SQL migration: the package still exists; the analyst writes the reason.
+        pass
+    reasons.sort(key=lambda r: SEV_RANK[r["severity"]])
+    severity = reasons[0]["severity"] if reasons else None
+    headline_kind = "schema" if schema_changed else "migrations"
+    return {"schema_artifact": schema, "schema_configured": schema_cfg, "schema_changed": schema_changed,
+            "migrations_dir_configured": mig_dirs, "unmanaged_sql_source": unmanaged_src,
+            "headline_kind": headline_kind, "headline": schema if schema_changed else (migrations[0]["path"] if migrations else None),
+            "migrations": migrations, "reasons": reasons, "severity": severity}
 
 # ---------------------------------------------------------------- parsing
 class Hunk:
@@ -655,6 +1032,12 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     root = a.root or _git_toplevel()
     verified, vendor_notes = vendor_scan(root, a.verify_ref, {f.path for f in files}, a.base_ref)
+    cfg = load_skill_config(root)
+    db = db_scan(files, root, cfg)
+    db_role = {}
+    if db:
+        if db["schema_artifact"]: db_role[db["schema_artifact"]] = "schema"
+        for mg in db["migrations"]: db_role[mg["path"]] = "migration"
 
     model_files, folds = [], defaultdict(list)
     lines_changed = lines_sub = 0
@@ -691,7 +1074,7 @@ def main():
         if f.status == "added" and noise is None: added_files.append(f)
         entry = {"id": f"F{fi}", "path": f.path, "old_path": f.old_path if f.old_path != f.path else None,
                  "status": cat_file, "similarity": f.similarity, "language": language(f.path), "area": area(f.path),
-                 "whitespace_sensitive": ws, "noise_kind": noise, "hunks": hunks,
+                 "db": db_role.get(f.path), "whitespace_sensitive": ws, "noise_kind": noise, "hunks": hunks,
                  "substantive_hunks": sum(1 for h in hunks if h["category"] == "substantive"),
                  "symbols_added": sorted(sym_added[f.path]), "symbols_removed": sorted(sym_removed[f.path])}
         model_files.append(entry)
@@ -925,6 +1308,10 @@ def main():
                       c: sum(1 for e in model_files for h in e["hunks"] if h["category"] == c)
                       for c in {h["category"] for e in model_files for h in e["hunks"]}}).items()))},
         "files": model_files, "folds": fold_list, "symbol_moves": symbol_moves,
+        # The DB package as facts (schema artifact, ordered migrations, what the SQL does, the
+        # reasons it supports). None when no DB file changed. report.json's db_package is built
+        # FROM this and validated AGAINST it.
+        "db": db,
         "notes": [f"{e['path']}: whitespace-sensitive language — whitespace hunks kept as substantive"
                   for e in model_files if e["whitespace_sensitive"] and any(
                       h["category"] == "substantive" and not h["symbol"] for h in e["hunks"])][:20]
@@ -951,7 +1338,9 @@ def main():
 
     s = model["stats"]
     print(f"classified {s['files']} files / {lines_changed} changed lines → {s['lines_substantive']} substantive "
-          f"({s['noise_pct']}% folded as noise); {len(fold_list)} fold groups; {len(symbol_moves)} symbol moves")
+          f"({s['noise_pct']}% folded as noise); {len(fold_list)} fold groups; {len(symbol_moves)} symbol moves"
+          + (f"; DB package: {db['headline_kind']} headline, {len(db['migrations'])} migration(s), "
+             f"{db['severity'] or 'severity undecided'}" if db else ""))
 
 if __name__ == "__main__":
     main()

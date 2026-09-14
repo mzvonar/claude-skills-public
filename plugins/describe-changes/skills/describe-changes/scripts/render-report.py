@@ -155,7 +155,68 @@ def prov_badge(provenance):
     cls, label, title = entry
     return f'<span class="prov {cls}" title="{E(title)}">{E(label)}</span>'
 
-def finding_card(f, hunks, note=None):
+DB_REASON_LABEL = {
+    "destructive_ddl": "destructive DDL", "unrepresented_ddl": "DDL the schema does not describe",
+    "data_mutation": "data mutation", "ordering": "ordering", "schema_migration_drift": "schema changed, no migration",
+    "structural_ddl": "new table / relation / unique constraint", "additive_ddl": "additive DDL",
+}
+DB_DETECTED_LABEL = {"config": "matched against the repo's unmanagedSql config",
+                     "heuristic": "heuristic — object types an ORM usually does not model; may be a false positive",
+                     "no_schema_diff": "the schema artifact did not change in this diff"}
+DB_NOTE_MAX = 100
+
+def db_package_html(f, known=None):
+    """The DB schema package inside its finding card (report-schema.md → db_package).
+
+    Reasons first — each with its severity AS TEXT (the report is read by people who will not tell
+    the hues apart, in two themes) and its own reviewer question; flat when there is exactly one,
+    a list only from two up, so structure grows with actual complexity. Then the sidecar: the
+    migration files, muted, collapsed, ordered as the classifier ordered them (filename/timestamp
+    — whether a backfill runs before or after a structural change is a correctness property), each
+    opening its diff through the same file store every other path on the page uses.
+
+    No per-file severity badge, deliberately: one file can carry reasons of different severity, so
+    a badge would re-collapse to worst-of under an entry that already did that rollup. The per-file
+    signal is the presence of a one-line summary; a bare filename means nothing to see. And a lone
+    migration gets no summary at all — the reason above already refers to the only file.
+    """
+    pk = f.get("db_package") or {}
+    reasons = pk.get("reasons") or []
+    def reason_html(r):
+        sev = r.get("severity", "low")
+        q = r.get("question") or classify_diff.REASON_QUESTION.get(r.get("kind", ""), "")
+        by = r.get("detected_by")
+        by_html = (f'<div class="dbp-by">detected by: {E(DB_DETECTED_LABEL.get(by, by))}</div>'
+                   if r.get("kind") == "unrepresented_ddl" and by else "")
+        return (f'<div class="dbp-r"><span class="pill {E(sev)}">{E(sev)}</span>'
+                f'<span class="dbp-k">{E(DB_REASON_LABEL.get(r.get("kind"), r.get("kind", "")))}</span>'
+                + (f'<div class="dbp-q">{E(q)}</div>' if q else "")
+                + (f'<div class="dbp-d">{E(r["detail"])}</div>' if r.get("detail") else "")
+                + by_html + '</div>')
+    if len(reasons) == 1:
+        rs = reason_html(reasons[0])
+    else:
+        rs = '<ul class="dbp-rs">' + "".join(f"<li>{reason_html(r)}</li>" for r in reasons) + "</ul>"
+    migs = pk.get("migrations") or []
+    if migs:
+        many = len(migs) > 1
+        rows = []
+        for mg in migs:
+            note = (mg.get("note") or "") if many else ""
+            if len(note) > DB_NOTE_MAX: note = note[:DB_NOTE_MAX - 1].rstrip() + "…"
+            rows.append(f'<li class="{"ann" if note else ""}">{fpath(mg["path"], known)}'
+                        + (f'<div class="sc-note">{E(note)}</div>' if note else "") + "</li>")
+        n = len(migs)
+        side = (f'<details class="sidecar"><summary>{n} migration{"s" if n != 1 else ""}'
+                f'{" · in run order" if many else ""}</summary><ol class="sc-l">{"".join(rows)}</ol></details>')
+    elif pk.get("headline_kind") == "schema":
+        # Case 3 (§6): the empty sidecar IS the finding. Rendered as a statement, never as a blank.
+        side = '<div class="sidecar sidecar-empty">No migration accompanies this schema change.</div>'
+    else:
+        side = ""
+    return f'<div class="dbp"><b>DB schema change</b>{rs}{side}</div>'
+
+def finding_card(f, hunks, note=None, known=None):
     """`note` is what the reader last typed into this card's box, replayed from the feedback log.
 
     Without it the box comes back EMPTY on every re-render and the note is visible nowhere on the
@@ -189,12 +250,15 @@ def finding_card(f, hunks, note=None):
             rows.append(f'<li><span class="loc" data-loc="{E(s)}">⧉ {E(s)}</span>'
                         + (f' — {E(why)}' if why else "") + "</li>")
         div = f'<div class="kv"><b>Diverges from</b><ul class="refs">{"".join(rows)}</ul></div>'
-    return f'''<div class="card sev-{sev}" data-id="{E(f["id"])}" data-key="{E(finding_key(f))}" data-sev="{sev}" data-tags="{E(" ".join(tags))}">
+    is_db = isinstance(f.get("db_package"), dict)
+    dbtag = '<span class="dbtag">DB schema change</span>' if is_db else ""
+    return f'''<div class="card sev-{sev}{" db" if is_db else ""}" data-id="{E(f["id"])}" data-key="{E(finding_key(f))}" data-sev="{sev}" data-tags="{E(" ".join(tags))}">
   <div class="card-h"><span class="tw">▶</span><span class="pill {sev}">{E(f["id"])}</span>
-    <div class="title">{E(f["title"])}<small>{E(loc)}</small></div></div>
+    <div class="title">{E(f["title"])}<small>{dbtag}{E(loc)}</small></div></div>
   <div class="card-b">
     <div class="verify"><b>Verify</b>{E(f["verify"])}</div>
     <div class="kv"><b>Why a human</b>{E(f["why_human"])}</div>
+    {db_package_html(f, known) if is_db else ""}
     {div}
     {('<div class="kv"><b>What changed</b>' + E(f["what"]) + '</div>') if f.get("what") else ""}
     {prov_badge(f.get("provenance"))}
@@ -510,6 +574,8 @@ def delta_page(before, dl, report, hunks, file_store, tpl, title, report_id, pri
 
     # Scope the stores to what these cards can open — the whole-report store is most of a megabyte.
     cited = {f["file"] for f in added} | {f["file"] for f, _ in changed}
+    cited |= {mg["path"] for f in added + [x for x, _ in changed]           # a DB package's sidecar opens too
+              for mg in ((f.get("db_package") or {}).get("migrations") or []) if mg.get("path")}
     cited |= {r["file"] for r in dl["findings_resolved"]}
     cited |= {c["covered_by"] for c in checks if c.get("covered_by")}   # a check's regression-cover link opens too
     small_store = {p: v for p, v in file_store.items() if p in cited}
@@ -875,7 +941,7 @@ def main():
     b.append('<div class="filter"><button class="on" data-f="all">All</button><button data-f="critical">Critical</button><button data-f="medium">Medium</button><button data-f="low">Low</button>'
              + "".join(f'<button data-f="{E(t)}">{E(t)}</button>' for t in tags) + "</div>")
     if findings:
-        b.extend(finding_card(f, hunks, (card_notes.get(finding_key(f)) or {}).get("text")) for f in findings)
+        b.extend(finding_card(f, hunks, (card_notes.get(finding_key(f)) or {}).get("text"), known_paths) for f in findings)
     else:
         b.append('<div class="empty">Nothing flagged. That is a claim, not a guarantee — the "Everything else" list below is what was looked at.</div>')
     b.append("</section>")
@@ -1004,15 +1070,24 @@ def main():
                  + '</div>')
     b.append('</div>' + ('<div class="empty" id="threads-empty">No comments yet. Select a word or sentence anywhere above and tap <b>Ask about this</b>, or tap the line number beside any line of code.</div>' if not threads else '') + '</section>')
 
-    flagged_files = {f["file"] for f in findings}
+    # The remainder is the COMPLEMENT of the findings, so a flagged file never appears here and no
+    # stub is needed. The trap: a finding names ONE file, but the DB package owns a headline AND its
+    # sidecar migrations, so the exclusion set must carry the sidecar too — or every migration
+    # renders twice, which is the duplication the package exists to remove. Keyed on the report's
+    # db_package rather than the model's db block: the report is what the reader sees.
+    flagged_files = {f["file"] for f in findings} | {
+        mg["path"] for f in findings for mg in ((f.get("db_package") or {}).get("migrations") or []) if mg.get("path")
+    }
     rest = [f for f in model["files"] if f["substantive_hunks"] and f["path"] not in flagged_files]
-    # Three registers, code FIRST: the reader skims this list for what might still matter, and a
-    # changed function deserves that glance more than a changed skill file or a doc. Tooling and docs
-    # get their own group so they can be skipped as a block instead of picked out row by row.
-    AREAS = (("code", "Code"), ("tooling", "Tooling"), ("docs", "Docs"))
+    # Four registers, code FIRST: the reader skims this list for what might still matter, and a
+    # changed function deserves that glance more than a changed skill file or a doc. Tests are a
+    # bucket of their own because "did they test it?" is the commonest question asked of this list,
+    # and an EMPTY tests bucket is the answer — so it renders even at zero, where every other empty
+    # bucket is omitted. That asymmetry is deliberate.
+    AREAS = (("code", "Code"), ("tests", "Tests"), ("tooling", "Tooling"), ("docs", "Docs"))
     by_area = {k: [f for f in rest if (f.get("area") or "code") == k] for k, _ in AREAS}
-    area_counts = " · ".join(f'{len(by_area[k])} {lbl.lower()}' for k, lbl in AREAS if by_area[k])
-    b.append(f'<section id="unreviewed"><h2>Everything else that changed <span class="cnt">{len(rest)} files, nothing flagged{(" — " + area_counts) if area_counts and len([k for k,_ in AREAS if by_area[k]]) > 1 else ""}</span></h2><div class="unrev">')
+    area_counts = " · ".join(f'{len(by_area[k])} {lbl.lower()}' for k, lbl in AREAS if by_area[k] or k == "tests")
+    b.append(f'<section id="unreviewed"><h2>Everything else that changed <span class="cnt">{len(rest)} files, nothing flagged{(" — " + area_counts) if rest else ""}</span></h2><div class="unrev">')
     b.append('<div class="empty">Substantive but not surfaced. Fresh eyes welcome — ⚑ raises a gut-flag for Claude to dig into.</div>')
     # One store of per-file changed code (substantive hunks, capped) — read lazily by the
     # "Everything else" rows and by every ⟨/⟩ file chip in the views.
@@ -1031,8 +1106,11 @@ def main():
         status = f["status"] + (f' ← {f["old_path"]}' if f.get("old_path") else "") + (f' ← moved from {f["moved_from"]}' if f.get("moved_from") else "")
         store[f["path"]] = {"status": status, "html": "".join(body) or '<div class="empty">no substantive hunks (folded as noise: ' + E(f.get("noise_kind") or ", ".join(sorted({h["category"] for h in f["hunks"]})) or "—") + ')</div>'}
     for area_key, area_label in AREAS:
-      if not by_area[area_key]: continue
-      b.append(f'<h3 class="area" data-area="{area_key}">{area_label} <span class="cnt">{len(by_area[area_key])}</span></h3>')
+      n = len(by_area[area_key])
+      if not n and area_key != "tests": continue
+      b.append(f'<h3 class="area" data-area="{area_key}">{area_label} <span class="cnt">· {n} file{"s" if n != 1 else ""}</span></h3>')
+      if not n:
+          b.append('<div class="empty area-empty">No test file changed.</div>')
       for f in by_area[area_key]:
         why = (report.get("unreviewed_notes") or {}).get(f["path"], "")
         b.append(f'<div class="row fold-row" data-file="{E(f["path"])}"><span class="tw">▶</span><span class="rp">{E(f["path"])} <span style="color:var(--fg3)">· {E(store[f["path"]]["status"])} · {f["substantive_hunks"]} hunk{"s" if f["substantive_hunks"] != 1 else ""}{(" · " + E(why)) if why else ""}</span></span><button data-file="{E(f["path"])}">⚑</button></div>'

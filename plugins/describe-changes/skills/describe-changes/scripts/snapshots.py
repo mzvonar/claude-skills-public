@@ -62,7 +62,7 @@ def current(d):
 # `verify`/`why_human`/`what` because re-writing the QUESTION a reviewer must answer is exactly the
 # kind of edit they need to see, and phases/graph/views/confession because they are the rest of the
 # page. Keep this in step with what render-report.py renders.
-_FINDING_FIELDS = ("id", "severity", "title", "file", "lines", "verify", "why_human", "what")
+_FINDING_FIELDS = ("id", "severity", "title", "file", "lines", "verify", "why_human", "what", "db_package")
 
 def _fingerprint(report, meta):
     return json.dumps({"findings": [[f.get(k) for k in _FINDING_FIELDS]

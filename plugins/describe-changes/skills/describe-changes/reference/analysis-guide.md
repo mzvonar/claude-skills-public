@@ -18,9 +18,22 @@ Ranking between classes when the cap bites: irreversible damage (data, auth, mon
 convention divergence (it propagates — the next change copies it) > a localised correctness question.
 Rather than 5 criticals, produce 3 criticals and put the other two first in medium.
 Zero findings is a valid report. Say so plainly; the "Everything else" list carries the honesty.
-That list is grouped by each file's `area` from `diff-model.json` — **Code**, then **Tooling** (`.claude/`,
-CI, manifests, configs, CLAUDE.md/AGENTS.md), then **Docs** — so a reader can give code the glance and skip
-the rest as a block. The grouping is mechanical; do not restate it in prose.
+That list is grouped by each file's `area` from `diff-model.json` into four buckets, in this order —
+**Code**, **Tests**, **Tooling**, **Docs** — so a reader can give code the glance and skip the rest as
+a block. An empty **Tests** bucket still renders (`Tests · 0 files`): "did they test it?" is the
+commonest question asked of that list, and its emptiness is the answer. Every other empty bucket is
+omitted. The grouping is mechanical; do not restate it in prose. A file lands in the **first** bucket
+that matches (the implementation is `area()` in `classify-diff.py`; keep the two in step):
+
+| # | Bucket | Matches |
+|---|---|---|
+| 1 | **Tests** | a test dir segment (`tests/`, `test/`, `__tests__/`, `spec/`, `e2e/`, `fixtures/`, `__snapshots__/`, `__mocks__/`), or a basename like `*.test.*`, `*.spec.*`, `*_test.*`, `test_*.py`, `conftest.py` — fixtures and snapshots under a test dir included |
+| 2 | **Tooling** | dot-dirs (`.github/`, `.vscode/`, `.claude/`, …) and root dotfiles, CI configs, lockfiles, manifests (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, …), `Dockerfile`, `Makefile`, `*.config.*`, `tsconfig*.json`, root-level `*.yml`/`*.yaml`, root-level `scripts/`, `CLAUDE.md`/`AGENTS.md` |
+| 3 | **Docs** | `*.md`, `*.mdx`, `*.rst`, `*.adoc`, `*.txt`, `README`/`CHANGELOG`/`LICENSE`-class names, anything under `docs/`, `doc/`, `wiki/`, `adr/`, `rfcs/` |
+| 4 | **Code** | everything else — the default, never empty by rule |
+
+Tooling is decided before docs so a skill's `SKILL.md` or a `CLAUDE.md` counts as tooling, not prose.
+DB files never reach this list: the schema artifact and its migrations are owned by the DB package (§8).
 
 ## 2. What earns a flag (signals, strongest first)
 
@@ -109,3 +122,61 @@ snapshot that changed because behaviour did), surface that as a finding — that
 
 Plain English for a stranger. Name code in backticks. Verbs over adjectives. No praise, no
 "successfully". Every sentence either tells the reviewer what to look at or why — delete the rest.
+
+## 8. The DB schema package
+
+A database change is **one entry** in the ranked list, whatever its file count: the authored schema
+artifact is the headline, the migrations are a muted sidecar beneath it. Not a section of its own,
+not pinned to the top — its position follows its severity like any other finding, so an additive
+index sits below a real correctness bug. It is present **whenever the diff touches a DB file** (the
+validator refuses a report without it), and its severity varies.
+
+Everything mechanical is already in `diff-model.json → db`; copy it, do not re-derive it:
+
+- `headline_kind` / `headline` — `"schema"` when the schema artifact changed, else `"migrations"`
+  (the first migration is then the headline). A project with no schema concept — raw SQL, an ORM
+  with migrations only — is the second branch of the same rule, not a degraded view.
+- `migrations[]` — in run order (filename/timestamp), each with the operations the SQL parser found,
+  its own severity, and a `summary` line. The line names **operations, not severity** (`drops 2
+  columns; runs 1 UPDATE`), exists only for files with a critical/medium operation, and is capped
+  at 100 chars. **Use it verbatim as the file's `note`, or leave the note out.** Every operation it
+  names is literally in the file; a plausible-sounding line the parser did not produce is a
+  confident claim a reviewer will act on, in the one section that exists to direct attention.
+- `reasons[]` — bullets the SQL supports, each with a kind, a fixed severity and a reviewer
+  question. Keep all of them (you may add one for a non-SQL migration you read yourself); rewrite
+  `detail` toward risk if the parser's phrasing is flat.
+
+| reason | fires when | severity | the reviewer's question |
+|---|---|---|---|
+| `destructive_ddl` | DROP COLUMN/TABLE, NOT NULL without default, type change, FK/cascade change, TRUNCATE | critical | what data does this lose, and is it recoverable? |
+| `unrepresented_ddl` | DDL present in a migration but absent from the schema | critical | will it survive the next generated migration? |
+| `data_mutation` | any DML (UPDATE/INSERT/DELETE/MERGE) | critical | does the predicate match the intended rows; is it idempotent? |
+| `ordering` | 2+ migrations with data in one and structure in another | medium | does the backfill run before or after the structural change? |
+| `schema_migration_drift` | schema diff present, no migration | critical | why is there no migration? |
+| `structural_ddl` | new table/relation, unique constraint on existing data | medium | is this the intended shape; does existing data satisfy it? |
+| `additive_ddl` | nullable column, plain index, dropped NOT NULL | low | is anything here more than additive? |
+
+Severity comes **from the SQL**, never from the schema diff and never from filenames — a schema diff
+can look innocuous while the generated SQL drops a cascade. The per-kind severity is decided in one
+place (`REASON_SEVERITY` in `classify-diff.py`, mirrored in the validator); `data_mutation` is
+critical there for irreversibility — if backfills prove routine enough that a constantly-firing
+critical dulls the section, change it there, not per report.
+
+**`unrepresented_ddl` has three detectors, and the reason says which fired** (`detected_by`), so a
+heuristic hit can be discounted:
+
+- `no_schema_diff` — migrations carry DDL and the schema artifact did not change, in a project that
+  has one. Genuine drift: the ORM does not know the object exists and its next generated migration
+  can silently drop it. Say **that**, never "handwritten migration". A DML-only migration with no
+  schema diff is *not* drift — it is `data_mutation`, flagged for irreversibility.
+- `config` — the repo lists its unmanaged SQL (`describe-changes.unmanagedSql` or
+  `prisma-migrate.unmanagedSql` in `.claude/claude-skills.json`): an unmanaged object dropped and
+  not re-created is drift; one re-asserted is the documented workflow and is not flagged.
+- `heuristic` — no such config: object types ORMs typically do not model (`USING hnsw`/`gin`/…,
+  partial indexes, triggers, functions, views, policies, CHECK constraints). False positives happen;
+  a missed drift is worse.
+
+The schema legitimately appears in a **phase** too, as shape ("Organization becomes the tenant
+root"); the package in the findings carries **risk** ("drops 9 cascade edges; verify the backfill
+predicate and its ordering"). If the two would read identically, the package's text is wrong —
+rewrite it toward risk, do not delete it.

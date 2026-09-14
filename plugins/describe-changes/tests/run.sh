@@ -432,26 +432,38 @@ PY
 grep -q 'Renamed files' "$OUT/index.html" || fail "fold card missing"
 grep -q 'row fold-row' "$OUT/index.html" && grep -A3 'row fold-row' "$OUT/index.html" | grep -q 'row-body' || fail "everything-else rows not expandable"
 
-# "Everything else" is grouped by register, code FIRST, so the reader can skim code and skip the rest.
+# "Everything else" is grouped into FOUR buckets, code FIRST, so the reader can skim code and skip
+# the rest. Tests render even when EMPTY — "did they test it?" is the question this list gets asked
+# most, and this fixture has no test file, so the bucket must say so. Every other empty bucket is
+# omitted (no tooling file changed here).
 python3 - "$OUT/index.html" "$S/classify-diff.py" <<'PY' || fail "everything-else grouping"
 import re, sys, importlib.util
 html = open(sys.argv[1]).read()
 sec = re.search(r'<section id="unreviewed">(.*?)</section>', html, re.S).group(1)
 groups = re.findall(r'<h3 class="area" data-area="(\w+)">', sec)
-assert groups == [g for g in ("code", "tooling", "docs") if g in groups], groups
-assert groups[0] == "code" and "docs" in groups, groups
+assert groups == ["code", "tests", "docs"], groups          # tooling omitted (empty), tests kept (empty)
+assert re.search(r'data-area="tests">Tests <span class="cnt">· 0 files</span>', sec), "empty Tests bucket must render as 'Tests · 0 files'"
+assert re.search(r'data-area="code">Code <span class="cnt">· \d+ files?</span>', sec), "bucket heading must carry its count"
+h2 = sec.split("</h2>", 1)[0]
+assert "0 tests" in h2, f"the h2 count line must mention the empty tests bucket: {h2}"
 def group_of(path):
     i = sec.index(f'data-file="{path}"'); return re.findall(r'data-area="(\w+)"', sec[:i])[-1]
 assert group_of("script.py") == "code", group_of("script.py")
 assert group_of("docs/adr/0007-new-decision.md") == "docs"
 spec = importlib.util.spec_from_file_location("cd", sys.argv[2]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-cases = {"src/api/users.ts": "code", "scripts/run.mjs": "code", "src/config.ts": "code", "src/foo.config.json": "code",
+# Precedence: a file lands in the FIRST bucket that matches — tests, then tooling, then docs, then code.
+cases = {"src/api/users.ts": "code", "src/scripts/run.mjs": "code", "src/config.ts": "code", "src/foo.config.json": "code",
          "README.md": "docs", "docs/adr/0007.md": "docs", "notes.txt": "docs", "_bmad-output/x/y.md": "docs", "frontend/README.md": "docs",
          ".claude/skills/x/SKILL.md": "tooling", "CLAUDE.md": "tooling", "AGENTS.md": "tooling", ".github/workflows/ci.yml": "tooling",
          ".gitlab-ci.yml": "tooling", "package.json": "tooling", "tsconfig.base.json": "tooling", "vite.config.ts": "tooling",
-         ".eslintrc.json": "tooling", "docker-compose.test.yml": "tooling", "Dockerfile": "tooling", "e2e/playwright.showcase.config.ts": "tooling"}
+         ".eslintrc.json": "tooling", "docker-compose.test.yml": "tooling", "Dockerfile": "tooling",
+         "ci.yml": "tooling", "scripts/release.sh": "tooling", "pnpm-lock.yaml": "tooling", ".env.example": "tooling",
+         "tests/fixtures/seed.sql": "tests", "tests/api/users.test.ts": "tests", "src/util/text.spec.ts": "tests",
+         "src/util/text_test.go": "tests", "conftest.py": "tests", "tests/__snapshots__/a.snap": "tests",
+         "e2e/playwright.config.ts": "tests", "spec/models/user_spec.rb": "tests", "docs/testing.md": "docs"}
 bad = {k: m.area(k) for k, v in cases.items() if m.area(k) != v}
 assert not bad, bad
+assert m.AREAS == ("code", "tests", "tooling", "docs"), m.AREAS
 print("everything-else grouping OK")
 PY
 
@@ -459,7 +471,8 @@ PY
 python3 "$S/snapshots.py" list --dir "$OUT" | grep -q "001-" || fail "the render did not record a snapshot"
 python3 "$S/snapshots.py" diff --dir "$OUT" | grep -q "Nothing changed" || fail "an unchanged report must report no delta"
 python3 "$S/render-report.py" --dir "$OUT" >/dev/null
-python3 "$S/snapshots.py" list --dir "$OUT" | grep -cq "^" && [ "$(python3 "$S/snapshots.py" list --dir "$OUT" | wc -l)" = "1" ] \
+# (tr: BSD wc pads its count with spaces, and `[ "   1" = "1" ]` is false)
+[ "$(python3 "$S/snapshots.py" list --dir "$OUT" | wc -l | tr -d " ")" = "1" ] \
   || fail "an unchanged re-render must not pile up snapshots"
 python3 - "$OUT" <<'PY' || fail "could not stage the second snapshot"
 import json, os, sys
@@ -1383,5 +1396,8 @@ for f in ("feedback.py", "render-report.py"):
         assert bad not in src, f"{f} builds a thread id inline: {bad}"
 print("thread identity OK")
 PI
+
+# The DB schema package + the four-bucket remainder have a fixture suite of their own.
+bash "$HERE/db-package.sh" || fail "db-package suite"
 
 echo "ALL TESTS PASSED"

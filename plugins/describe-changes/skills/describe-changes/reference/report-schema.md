@@ -60,7 +60,38 @@ Keys marked ● are required.
 
   "findings": [                                                       // ● important first; ids C1.. M1.. L1..
     {
-      "id": "C1", "severity": "critical",
+      // THE DB SCHEMA PACKAGE — one finding that owns the ENTIRE database change: the authored
+      // schema artifact as the headline, its migrations as a muted sidecar beneath it. Presence of
+      // `db_package` is what marks it. Build it FROM `diff-model.json → db` (the classifier already
+      // found the schema artifact, the migrations in run order, what each SQL file does and the
+      // reasons it supports): copy `headline_kind`, the migration paths in the given order, each
+      // file's `summary` as its `note` (or no note), and the `reasons`. Write the title toward RISK
+      // ("drops 9 cascade edges; verify the backfill predicate") — the phase already says the shape.
+      // At most ONE finding may carry it. It is required whenever `diff-model.json → db` is set.
+      "id": "C1", "severity": "critical",           // = the max over reasons[].severity — enforced
+      "title": "Organization becomes the tenant root; firmId leaves 8 models",
+      "verify": "…", "why_human": "…",
+      "file": "prisma/schema.prisma",               // the headline: db.headline (schema artifact, or the first migration)
+      "db_package": {
+        "headline_kind": "schema",                  // "schema" | "migrations"  — copy db.headline_kind
+        "migrations": [                             // db.migrations, SAME order (filename/timestamp); [] allowed
+          { "path": "prisma/migrations/20260913120000_x/migration.sql",
+            "note": "drops 9 FK constraints; runs 1 UPDATE" },   // = that file's `summary`, verbatim; ≤ 100 chars;
+          { "path": "prisma/migrations/20260913130000_y/migration.sql" }  // no `summary` → NO note (bare = nothing to see)
+        ],
+        "reasons": [                                // 1..n, from db.reasons; render flat when exactly 1
+          { "kind": "destructive_ddl", "severity": "critical",
+            "question": "What data does this lose, and is it recoverable?",
+            "detail": "Drops the firm cascade edge on 9 child tables." },
+          { "kind": "unrepresented_ddl", "severity": "critical",
+            "detected_by": "config",                // "config" | "heuristic" | "no_schema_diff" — shown to the reader
+            "question": "Will it survive the next generated migration?",
+            "detail": "…" }
+        ]
+      }
+    },
+    {
+      "id": "C2", "severity": "critical",
       "title": "`spawnClaude` passes `--dangerously-skip-permissions` whenever `execution.mode` is unset",
       "verify": "Is bypass the intended default for steps that do not declare a mode?",
       "why_human": "Default policy for unattended sessions is a judgement call with security consequences; no test encodes the intent.",
@@ -77,7 +108,7 @@ Keys marked ● are required.
       // optional instead of hunks: "before": "…code…", "after": "…code…"
     },
     {
-      "id": "C2", "severity": "critical",
+      "id": "C3", "severity": "critical",
       "title": "`removeMemberAsUser` reads Prisma directly instead of going through the repository",
       "verify": "Is this deliberately outside the layer rule, or should it call `membershipRepository`?",
       "why_human": "The rule exists to keep tenant scoping in one place; whether this is a new direction is the author's call.",
@@ -128,6 +159,20 @@ Keys marked ● are required.
 Rules the validator enforces: ≤ 3 critical (error), ≤ 7 medium (warn); each finding has `title`,
 `verify`, `why_human`, `file`; finding ids are unique and match severity (`C`/`M`/`L`); every file path
 exists in the diff; every edge references a node; graph ≤ 40 nodes (warn).
+
+On `db_package` (all errors unless marked): at most one finding carries it, and one MUST when
+`diff-model.json → db` is set; `headline_kind: "schema"` requires `file` to be the schema artifact
+and the artifact to have changed, `"migrations"` requires a non-empty list with `file ==
+migrations[0].path`; every migration the classifier found is listed, in its order (a missing one
+would render twice in "Everything else"); every path is in the diff; `reasons` is non-empty, each
+`kind` from `destructive_ddl | unrepresented_ddl | data_mutation | ordering | schema_migration_drift |
+structural_ddl | additive_ddl`, each `severity` equal to the table in analysis-guide.md §8, and
+`finding.severity` equal to the max of them; every reason kind the SQL supports (`db.reasons`) is
+present — add reasons, never drop them; `unrepresented_ddl` carries `detected_by`; a schema
+headline with `migrations: []` carries `schema_migration_drift`; a `note` on a file whose parsed
+`summary` is empty is an error (nothing to trace it to), a note that differs from the summary or
+exceeds 100 chars warns (the renderer truncates), and a note on a lone migration warns (the
+renderer omits it).
 
 On the header specifically: `summary` > 700 chars is an **error**, > 420 a warning, > 4 sentences a
 warning; `intent` > 260 chars warns; `intent`/`summary` vocabulary overlap > 55% warns; a `confession`

@@ -14,8 +14,10 @@ it or why they made a choice — read what is there.
 
 Inputs, all under `$OUT`:
 
-- `diff-model.json` — read this FIRST: `stats`, `folds`, `symbol_moves`, per-file `area` (code | tooling | docs), `status` /
-  `moved_from` / `symbols_added|removed`, hunk `category` + `symbol` + `id`.
+- `diff-model.json` — read this FIRST: `stats`, `folds`, `symbol_moves`, `db` (the database change
+  as facts: schema artifact, migrations in run order, what each SQL file does, the reasons it
+  supports), per-file `area` (code | tests | tooling | docs), `status` / `moved_from` /
+  `symbols_added|removed`, hunk `category` + `symbol` + `id`.
 - `substantive.diff` — only the hunks that survived noise-folding. Each is tagged `[F3H2]`; cite
   those ids.
 - `conventions.txt` — the rule documents governing the changed paths, and the untouched sibling
@@ -30,6 +32,10 @@ type, a config key); prefer `Grep` for the one symbol over reading the file.
 A JSON array of findings, matching the `findings` shape in `reference/report-schema.md`:
 `id`, `severity`, `title`, `verify`, `why_human`, `what`, `file`, `lines`, `hunks`, `tags`, and
 `diverges_from` where it applies. Nothing else — no summary, no phases, no map.
+
+When `diff-model.json → db` is set, exactly one finding carries `db_package` (report-schema.md) built
+from it: `headline_kind`, the migrations in the given order with each file's `summary` as its `note`
+(or no note), and the `reasons` — kept whole, severity as given. Title it toward risk.
 
 ## The bar
 

@@ -1,6 +1,6 @@
 ---
 name: describe-changes
-version: "1.18.0"
+version: "1.19.0"
 description: >
   Present an implemented change to a human reviewer the way a human needs it: what was done and why,
   a visual map of the high-level change (who calls whom, where data flows, what moved/split/renamed),
@@ -64,8 +64,8 @@ if it is not there (it holds reports + feedback, never source).
 
 ## 2. Read the model, not the diff
 
-Read **`diff-model.json`** first (`stats`, `folds`, `symbol_moves`, per-file `status`/`moved_from`/
-`symbols_added|removed`, hunk `category` + `symbol` + `id`). Then read **`substantive.diff`** — only the
+Read **`diff-model.json`** first (`stats`, `folds`, `symbol_moves`, `db`, per-file `status`/`moved_from`/
+`area`/`symbols_added|removed`, hunk `category` + `symbol` + `id`). Then read **`substantive.diff`** — only the
 hunks that survived folding; each hunk is tagged `[F3H2]` so you can cite it. Open full source files
 only when a hunk's meaning depends on context you cannot see (a caller, a type, a config key) — and
 prefer `Grep` for the one symbol over reading the file.
@@ -174,6 +174,11 @@ the exact shape in `reference/report-schema.md`. The non-negotiables:
   message is the second-commonest way this report gets rubber-stamped, after being too long.
 - **Every finding = a question the human can answer** (`verify`), plus `why_human` — why a machine/the
   author can't settle it (judgement, intent, blast radius, irreversibility, security, data, money).
+- **The DB change is ONE finding** (`db_package`, analysis-guide §8): the schema artifact as headline,
+  its migrations as a sidecar. When `diff-model.json → db` is set, build it from there — headline,
+  migrations in the given order, each file's `summary` as its `note` or no note, the `reasons` —
+  and write the title toward risk. Its severity is the max of its reasons and it sorts like any
+  other finding; the validator refuses a report that has a DB change and no package.
 - **Divergence lens:** flag where what the code *does* ≠ what it *claims* (name vs body, "just a
   refactor" that changes behaviour, scope creep beyond the task, PII/secrets wrapped or renamed,
   hidden global state, error paths swallowed). That is the part no linter does.
@@ -285,9 +290,9 @@ Exactly this shape, nothing more:
    convey by listing findings, and it is what tells the reader how much of the report is a second
    opinion. Say nothing here on a single-pass run — silence means one reader, which is the default.
 5. **Folded noise** as one line: "Folded: 3 renames (+11 import rewrites), 6 formatting hunks, 2 lockfiles".
-5b. **Everything else** as one line of counts by register, code first: "Unflagged: 12 code · 3 tooling
-   · 5 docs" — the report groups that list the same way, so the reader knows how much of it is code
-   before opening it.
+5b. **Everything else** as one line of counts by register, code first, tests always: "Unflagged: 12 code
+   · 0 tests · 3 tooling · 5 docs" — the report groups that list the same way, and a zero on tests
+   is the one count worth saying out loud.
 6. The URLs. For `--chat-only` there is no page to link, so inline the rest: the map as a
    ```mermaid``` block **between the summary and the phases** — same order as the report, and for the
    same reason — then the full low list and the folded groups at the end.
@@ -362,6 +367,28 @@ python3 "$S/feedback.py" push      # no-op unless a shared backend is configured
 If the user pasted feedback JSON copied from the page (file:// mode), save it to `$OUT/feedback.json`
 and ingest that. Mention in one line how many lessons were recorded. Maintainers improve the skill with
 `python3 "$S/feedback.py" digest` — see `reference/learning-loop.md`.
+
+## Configuration
+
+Optional, in the consuming repo's `.claude/claude-skills.json`. Everything is detected by convention
+first; set a key only when detection is wrong.
+
+```json
+{
+  "describe-changes": {
+    "schemaArtifact": "db/model.prisma",
+    "migrationsDir": "db/migrate",
+    "unmanagedSql": [ { "name": "posts_embedding_idx", "sql": "CREATE INDEX …" } ]
+  }
+}
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `schemaArtifact` | first of `prisma/schema.prisma`, `db/schema.rb`, `schema.sql`, `db/schema.sql`, `db/structure.sql`, any `**/schema.prisma` / `**/schema.rb` that exists | The authored schema file that headlines the DB package. Unset in a project with no schema concept — the migrations then headline it. |
+| `migrationsDir` | any path segment named `migrations`, `migrate` or `migration` (so `prisma/migrations/`, `db/migrate/`, `migrations/`), lock/metadata files excluded | Where migrations live. A string or a list; setting it **replaces** the convention. |
+| `unmanagedSql` | the `prisma-migrate.unmanagedSql` list if that skill is configured, else none | Objects the ORM cannot model, as `{ name, sql }` or bare names. With it, drift detection is a config match; without it, a type heuristic (analysis-guide §8). |
+| `DESCRIBE_CHANGES_NOTES_RE` (env) | plans, handoffs, lessons inbox, journals | Regex for markdown that folds as working notes. |
 
 ## Style rules for everything you write
 

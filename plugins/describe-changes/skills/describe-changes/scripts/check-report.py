@@ -9,6 +9,15 @@ references a known node, ids are unique and follow C1/M1/L1 numbering.
 import json, sys, os, re
 
 SEV = {"critical": "C", "medium": "M", "low": "L"}
+SEV_RANK = {"critical": 0, "medium": 1, "low": 2}
+# The DB package (report-schema.md → db_package). Severity per reason kind is decided in ONE place —
+# classify-diff.REASON_SEVERITY — and mirrored here so a report cannot re-rate a kind per call site.
+DB_REASON_SEVERITY = {
+    "destructive_ddl": "critical", "unrepresented_ddl": "critical", "data_mutation": "critical",
+    "schema_migration_drift": "critical", "ordering": "medium", "structural_ddl": "medium", "additive_ddl": "low",
+}
+DB_DETECTED_BY = {"config", "heuristic", "no_schema_diff"}
+DB_NOTE_MAX = 100
 # Who raised a finding, on a two-pass run (SKILL.md §2b). "both" is the strongest signal the report
 # can carry: two readers who could not see each other's work landed on the same spot.
 PROVENANCE = {"fresh", "author", "both"}
@@ -57,6 +66,111 @@ def check_divergence(f, fid, root):
     if not rules and len(set(paths)) < 2:
         errs.append(f"{fid}: 'diverges_from' cites one neighbour and no written rule — one sibling is a "
                     f"coincidence. Cite the rule, or a second file that does it the other way.")
+    return errs, warns
+
+def check_db_package(f, fid, model, known_files):
+    """One finding owns the whole database change. Everything it claims is checked against the
+    facts classify-diff.py recorded in diff-model.json → db: which file is the schema, which files
+    are migrations and in what order, what the SQL does. A package whose headline severity
+    disagrees with its reasons is unreadable, so that one is an error, not a warning."""
+    errs, warns = [], []
+    pk = f.get("db_package")
+    if not isinstance(pk, dict):
+        return [f"{fid}: db_package must be an object"], warns
+    db = (model or {}).get("db") or {}
+    kind = pk.get("headline_kind")
+    migs = pk.get("migrations")
+    reasons = pk.get("reasons")
+    if kind not in ("schema", "migrations"):
+        errs.append(f"{fid}: db_package.headline_kind must be schema|migrations (got {kind!r})")
+    if not isinstance(migs, list):
+        errs.append(f"{fid}: db_package.migrations must be a list (use [] for none)"); migs = []
+    paths = []
+    for i, mg in enumerate(migs):
+        if not isinstance(mg, dict) or not mg.get("path"):
+            errs.append(f"{fid}: db_package.migrations[{i}] needs a 'path'"); continue
+        paths.append(mg["path"])
+        if known_files is not None and mg["path"] not in known_files:
+            errs.append(f"{fid}: db_package migration '{mg['path']}' is not in the diff")
+        note = mg.get("note")
+        if note is not None:
+            if not isinstance(note, str):
+                errs.append(f"{fid}: db_package.migrations[{i}].note must be a string")
+            elif len(note) > DB_NOTE_MAX:
+                warns.append(f"{fid}: note on {mg['path']} is {len(note)} chars (cap {DB_NOTE_MAX}; the renderer truncates)")
+    if len(migs) == 1 and isinstance(migs[0], dict) and migs[0].get("note"):
+        warns.append(f"{fid}: a single migration carries a note — the reason already names the only file; the renderer omits it")
+    if kind == "schema":
+        if db.get("schema_artifact") and f.get("file") != db["schema_artifact"]:
+            errs.append(f"{fid}: headline_kind 'schema' requires file == the schema artifact ({db['schema_artifact']}), got {f.get('file')!r}")
+        if db and not db.get("schema_changed"):
+            errs.append(f"{fid}: headline_kind 'schema' but the schema artifact did not change in this diff — use 'migrations'")
+    elif kind == "migrations":
+        if not paths:
+            errs.append(f"{fid}: headline_kind 'migrations' requires a non-empty migrations list")
+        elif f.get("file") != paths[0]:
+            errs.append(f"{fid}: headline_kind 'migrations' requires file == migrations[0].path ({paths[0]}), got {f.get('file')!r}")
+        if db.get("schema_changed"):
+            errs.append(f"{fid}: the schema artifact changed in this diff — headline_kind must be 'schema' with file {db['schema_artifact']}")
+    # Every migration the classifier found must be in the package, or it leaks into "Everything
+    # else" — the duplication this package exists to remove (the §7 exclusion is keyed on these).
+    model_migs = [m["path"] for m in db.get("migrations") or []]
+    for p in model_migs:
+        if p not in paths:
+            errs.append(f"{fid}: migration {p} is in the diff but not in db_package.migrations — it would render twice")
+    for p in paths:
+        if model_migs and p not in model_migs:
+            warns.append(f"{fid}: db_package lists {p}, which the classifier does not consider a migration file")
+    if model_migs and paths and [p for p in paths if p in model_migs] != [p for p in model_migs if p in paths]:
+        errs.append(f"{fid}: db_package.migrations must keep the classifier's order (filename/timestamp): {model_migs}")
+    # Notes come from the SQL parse, never from prose: an operation named in a note must literally be
+    # in the file. The classifier's `summary` IS that line; a note that says something else is a claim
+    # the validator cannot trace.
+    by_path = {m["path"]: m for m in db.get("migrations") or []}
+    for mg in migs:
+        if not isinstance(mg, dict) or not mg.get("note"): continue
+        fact = by_path.get(mg["path"])
+        if fact is not None:
+            if not fact.get("ops"):
+                errs.append(f"{fid}: note on {mg['path']} but the parser found no SQL operation there — omit the note (nothing can be traced to a statement)")
+            elif not fact.get("summary"):
+                errs.append(f"{fid}: note on {mg['path']} but its operations are all low severity — omit the note; a bare filename says 'nothing to see'")
+            elif mg["note"] != fact["summary"]:
+                warns.append(f"{fid}: note on {mg['path']} differs from the parsed summary ({fact['summary']!r}) — every operation it names must appear in the file")
+    if not isinstance(reasons, list) or not reasons:
+        errs.append(f"{fid}: db_package.reasons must be a non-empty list"); reasons = []
+    kinds, sevs = [], []
+    for i, r in enumerate(reasons):
+        if not isinstance(r, dict):
+            errs.append(f"{fid}: db_package.reasons[{i}] must be an object"); continue
+        k, s = r.get("kind"), r.get("severity")
+        if k not in DB_REASON_SEVERITY:
+            errs.append(f"{fid}: reasons[{i}].kind must be one of {'|'.join(DB_REASON_SEVERITY)} (got {k!r})"); continue
+        kinds.append(k)
+        if s not in SEV:
+            errs.append(f"{fid}: reasons[{i}].severity must be critical|medium|low (got {s!r})"); continue
+        sevs.append(s)
+        if s != DB_REASON_SEVERITY[k]:
+            errs.append(f"{fid}: reasons[{i}] ({k}) is rated {s}; the severity table says {DB_REASON_SEVERITY[k]} — change the table, not the report")
+        if not r.get("question"): warns.append(f"{fid}: reasons[{i}] ({k}) has no 'question' — the renderer falls back to the default")
+        if k == "unrepresented_ddl":
+            if r.get("detected_by") not in DB_DETECTED_BY:
+                errs.append(f"{fid}: reasons[{i}] (unrepresented_ddl) needs detected_by ∈ {'|'.join(sorted(DB_DETECTED_BY))} — the reader must know whether to discount a heuristic hit")
+    if len(kinds) != len(set(kinds)):
+        warns.append(f"{fid}: db_package repeats a reason kind — merge them")
+    if sevs:
+        top = min(sevs, key=lambda s: SEV_RANK[s])
+        if f.get("severity") != top:
+            errs.append(f"{fid}: severity is {f.get('severity')!r} but the max over db_package.reasons is {top!r} — they must agree")
+    if kind == "schema" and not paths and "schema_migration_drift" not in kinds:
+        errs.append(f"{fid}: a schema change with no migration must carry a schema_migration_drift reason")
+    if "schema_migration_drift" in kinds and paths:
+        errs.append(f"{fid}: schema_migration_drift is claimed but the package lists migrations")
+    # What the SQL supports must be in the package. The classifier's reasons are facts about the
+    # statements; the analyst may add (a non-SQL migration it read), never drop.
+    for r in db.get("reasons") or []:
+        if r["kind"] not in kinds:
+            errs.append(f"{fid}: the migration SQL shows {r['kind']} ({r.get('detail','')[:90]}) but db_package has no such reason")
     return errs, warns
 
 def main():
@@ -135,6 +249,20 @@ def main():
             errs.append(f"{fid}: provenance must be one of {'|'.join(sorted(PROVENANCE))} (got {f['provenance']!r})")
         e2, w2 = check_divergence(f, fid, repo_root)
         errs += e2; warns += w2
+        if "db_package" in f:
+            e3, w3 = check_db_package(f, fid, model, known_files)
+            errs += e3; warns += w3
+
+    # One package per report — decided: multiple unrelated DB changes still form one group. And the
+    # package is not optional: when the diff carries a DB change the report must own it, or the
+    # migrations scatter across "Everything else" as ordinary files.
+    packages = [f.get("id", "?") for f in r["findings"] if "db_package" in f]
+    if len(packages) > 1:
+        errs.append(f"findings {', '.join(packages)} all carry db_package — at most one finding may (one package per report)")
+    if model and model.get("db") and not packages:
+        db = model["db"]
+        errs.append(f"the diff carries a DB change ({db.get('headline_kind')} headline, {len(db.get('migrations') or [])} migration(s)) "
+                    f"but no finding carries db_package — build it from diff-model.json → db (report-schema.md)")
 
     # Provenance is all-or-nothing. A report where some findings name their pass and others do not
     # cannot be read: an untagged finding is indistinguishable from one the cold pass missed, which
