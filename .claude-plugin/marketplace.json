@@ -75,7 +75,7 @@
         "source": "github",
         "repo": "mzvonar/refdiff"
       },
-      "version": "1.2.0",
+      "version": "1.2.1",
       "description": "Close the gap between a design frame and its implementation with the refdiff CLI in a measured loop.",
       "author": {
         "name": "Martin Zvon\u00e1r"
