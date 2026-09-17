@@ -19,7 +19,7 @@ cd "$T" || { echo "FATAL: cannot enter scratch dir '$T'" >&2; exit 1; }
 [ "$(pwd -P)" = "$(cd "$T" && pwd -P)" ] || { echo "FATAL: not in the scratch dir" >&2; exit 1; }
 git rev-parse --show-toplevel >/dev/null 2>&1 && { echo "FATAL: '$T' is inside an existing git repo — refusing to write fixtures into it" >&2; exit 1; }
 git init -q -b main . && git config user.email t@t && git config user.name t
-printf 'home/\nget.html\nserve.log\nserve2.log\njar\nth/\n' > .gitignore
+printf 'home/\nget.html\nserve.log\nserve2.log\nserve3.log\nserve4.log\njar\njar2\nth/\n' > .gitignore
 
 mkdir -p src/util src/api
 cat > src/util/strings.ts <<'F'
@@ -652,7 +652,7 @@ code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 [ "$(code -X POST localhost:8799/feedback -d '{"events":[{"type":"smuggled"}]}')" = 403 ] || { kill $SP; fail "serve: unauthenticated POST must be 403"; }
 # the URL serve.py prints works, and hands out the cookie the page's relative requests ride
 curl -sf -c "$T/jar" -o /dev/null 'localhost:8799/?k=testtoken' || { kill $SP; fail "serve: printed token URL must work"; }
-grep -q dc_report "$T/jar" || { kill $SP; fail "serve: token URL must set the cookie"; }
+grep -q dc_report_8799 "$T/jar" || { kill $SP; fail "serve: token URL must set the cookie, named for this port"; }
 curl -sf -b "$T/jar" -X POST localhost:8799/feedback -d '{"events":[{"ts":"2026-01-01T00:00:02Z","type":"more","finding":"C1"}]}' | grep -q '"stored": 1' || { kill $SP; fail "serve POST"; }
 curl -sf -b "$T/jar" -o "$T/get.html" localhost:8799/ && grep -q '<title>' "$T/get.html" || { kill $SP; fail "serve GET"; }
 # a dict `events` iterates to its KEYS, so this used to append the bare string "x" to the store and
@@ -672,6 +672,17 @@ sys.exit('non-object lines in the store: %r' % bad[:3]) if bad else print('feedb
 python3 "$S/serve.py" "$OUT" --port 8799 --no-token >"$T/serve2.log" 2>&1 & SP=$!; sleep 0.7
 curl -sf -o /dev/null localhost:8799/raw.diff || { kill $SP; fail "serve --no-token must serve openly"; }
 kill $SP; wait $SP 2>/dev/null || true
+# Two reports on ONE host. Browsers scope cookies by host and ignore the port, so a shared cookie
+# name let the report opened LAST overwrite the other's token, and every comment posted from the
+# older page came back 403 while the page looked connected. One jar plays the one browser.
+python3 "$S/serve.py" "$OUT" --port 8798 --token tokA >"$T/serve3.log" 2>&1 & SA=$!
+python3 "$S/serve.py" "$OUT" --port 8797 --token tokB >"$T/serve4.log" 2>&1 & SB=$!; sleep 0.7
+curl -sf -c "$T/jar2" -o /dev/null 'localhost:8798/?k=tokA' || { kill $SA $SB; fail "serve: first report's token URL"; }
+curl -sf -b "$T/jar2" -c "$T/jar2" -o /dev/null 'localhost:8797/?k=tokB' || { kill $SA $SB; fail "serve: second report's token URL"; }
+[ "$(code -b "$T/jar2" -X POST localhost:8798/feedback -d '{"events":[]}')" = 200 ] || { kill $SA $SB; fail "serve: opening a second report on the same host locked the first one's comments out"; }
+[ "$(code -b "$T/jar2" -X POST localhost:8797/feedback -d '{"events":[]}')" = 200 ] || { kill $SA $SB; fail "serve: the second report must take comments too"; }
+[ "$(code -X POST localhost:8797/feedback -d '{"events":[]}')" = 403 ] || { kill $SA $SB; fail "serve: the second report must still gate a cookie-less POST"; }
+kill $SA $SB; wait $SA $SB 2>/dev/null || true
 echo "serve token gate OK"
 
 # tree-hash: the pin's content hash must be stable, and must move for any edit that ships

@@ -16,6 +16,10 @@ gated on a per-run secret unless you opt out.
   * `--token T` pins it (stable URL across restarts), `--no-token` restores the pre-1.9
     open-to-the-network behaviour for a loopback-only or otherwise trusted setup.
   * A request with neither query nor cookie gets 403 and no file is read.
+  * The cookie is named per PORT. Browsers scope cookies by host and ignore the port, so two
+    reports served from one machine (one per worktree) used to share one cookie: opening the
+    second overwrote the first's token, and every comment posted from the first page came back
+    403 while it looked connected. Each server now reads and writes only its own `dc_report_<port>`.
 
 Prints LAN + Tailscale URLs. Kills a previous server on the same port (pid file in the report dir's parent).
 Runs in the foreground by default — start it with `nohup … &` or the skill's recipe (see SKILL.md).
@@ -25,7 +29,7 @@ from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-COOKIE = "dc_report"
+COOKIE = "dc_report"   # per-port suffix added in main(): see the docstring
 
 def ip_lan():
     for cmd in (["ipconfig", "getifaddr", "en0"], ["ipconfig", "getifaddr", "en1"]):
@@ -76,6 +80,7 @@ def main():
     ap.add_argument("--no-token", action="store_true", help="serve with NO access control (pre-1.9 behaviour)")
     a = ap.parse_args(); d = os.path.abspath(a.dir)
     token = "" if a.no_token else (a.token or secrets.token_urlsafe(16))
+    cookie = f"{COOKIE}_{a.port}"
     pidfile = os.path.join(os.path.dirname(d), f".serve-{a.port}.pid")
     if os.path.exists(pidfile):
         try:
@@ -96,7 +101,7 @@ def main():
                 return True
             raw = self.headers.get("Cookie", "")
             if raw:
-                got = SimpleCookie(raw).get(COOKIE)
+                got = SimpleCookie(raw).get(cookie)
                 if got and hmac.compare_digest(got.value, token): return True
             return False
 
@@ -107,7 +112,7 @@ def main():
 
         def end_headers(self):
             c = getattr(self, "_cookie", "")
-            if c: self.send_header("Set-Cookie", f"{COOKIE}={c}; Path=/; SameSite=Lax; Max-Age=86400")
+            if c: self.send_header("Set-Cookie", f"{cookie}={c}; Path=/; SameSite=Lax; Max-Age=86400")
             super().end_headers()
 
         def do_GET(self):

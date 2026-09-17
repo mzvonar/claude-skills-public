@@ -118,6 +118,13 @@ section>h2.sec-t .lhs{display:flex;align-items:center;gap:0;min-width:0}
 .diff .l.has-c{box-shadow:inset 3px 0 0 var(--info)}
 .diff .l.has-c .ln{color:var(--info);font-weight:700}
 .diff .l.has-c .ln::before{opacity:1}
+/* A comment left on prose: a faint mark on the exact words plus a superscript link to its thread.
+   Reading is never blocked — no popover, no layout shift; the mark is the only trace until the
+   reader follows it. Diff lines carry their own marker in the gutter (has-c) instead. */
+mark.dc-noted{background:rgba(99,179,237,.16);color:inherit;border-bottom:1px dotted var(--info);border-radius:2px;padding:0;cursor:pointer}
+mark.dc-noted:hover{background:rgba(99,179,237,.3)}
+mark.dc-noted[data-last]::after{content:'💬';font-size:.62em;vertical-align:super;margin-left:.15em;opacity:.85}
+.thread.flash{outline:2px solid var(--info);outline-offset:2px}
 details.more summary{cursor:pointer;color:var(--fg2);font-size:.85rem;padding:.3rem 0}
 .fb{display:flex;flex-wrap:wrap;gap:.4rem;padding-top:.2rem}
 .fb button,.btn{font:inherit;font-size:.78rem;font-weight:600;padding:.5rem .8rem;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--fg2);cursor:pointer;min-height:38px;-webkit-tap-highlight-color:transparent}
@@ -925,7 +932,7 @@ __BODY__
     const text = askText.value.trim(); if (!text || !sel) return;
     const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const e = event('comment', sel.finding, { id, text, anchor: sel });
-    renderThread(e); noteCommented(sel); pop.classList.remove('show'); window.getSelection()?.removeAllRanges();
+    renderThread(e); noteCommented(sel); markAnchor(e); pop.classList.remove('show'); window.getSelection()?.removeAllRanges();
     // A comment written into a COLLAPSED Conversation would appear to vanish — the reader's own
     // words, swallowed by a section they shut earlier. Only on a NEW comment: doing it inside
     // `renderThread` also fired during the replay below, which re-opened the section on every load
@@ -998,6 +1005,59 @@ __BODY__
   };
   const noteCommented = a => { const k = lineKey(a); if (!k) return; COMMENTED.add(k); afterCode(document); };
   fb.filter(e => e.type === 'comment' && e.anchor).forEach(e => { const k = lineKey(e.anchor); if (k) COMMENTED.add(k); });
+
+  // ---- Marking commented prose ---------------------------------------------------------------
+  // A comment on a diff line lights its gutter (has-c above); a comment on a sentence used to leave
+  // no trace on the page at all — the reader's own words lived only in Conversation, far below the
+  // text they were about. Each prose anchor is re-found in its scope (the finding card, else the
+  // section) and its text nodes are wrapped in <mark> one node at a time, so no element boundary
+  // is disturbed; the last piece carries a 💬 that jumps to the thread. Nothing else changes: no
+  // popover, no layout shift, and a selection over a mark still offers "Ask about this".
+  const scopeOf = a => {
+    if (a.finding) { const c = document.querySelector('.card[data-id="' + CSS.escape(a.finding) + '"]'); if (c) return c; }
+    if (a.finding_key) { const c = document.querySelector('.card[data-key="' + CSS.escape(a.finding_key) + '"]'); if (c) return c; }
+    if (a.section && a.section !== 'header') { const s = document.getElementById(a.section); if (s) return s; }
+    return document.querySelector('header.top') || document.querySelector('.page') || document.body;
+  };
+  // Threads quote the very text they are about, so #threads is excluded or the quote gets marked too.
+  const textNodesIn = root => {
+    const out = [], w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: n => (n.parentElement && n.parentElement.closest('textarea,script,style,.ask-pop,.diff,mark.dc-noted,#threads')) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+    for (let n = w.nextNode(); n; n = w.nextNode()) out.push(n);
+    return out;
+  };
+  const markAnchor = c => {
+    const a = c.anchor; if (!a || !a.text || lineKey(a)) return;
+    if (document.querySelector('mark.dc-noted[data-thread="' + CSS.escape(c.id) + '"]')) return;
+    const nodes = textNodesIn(scopeOf(a)); if (!nodes.length) return;
+    let full = ''; const starts = [];
+    nodes.forEach(n => { starts.push(full.length); full += n.data; });
+    const want = String(a.text).trim(); if (!want) return;
+    // Every occurrence; when the words repeat, the one whose surroundings match the recorded context wins.
+    const hits = []; for (let i = full.indexOf(want); i >= 0; i = full.indexOf(want, i + 1)) hits.push(i);
+    if (!hits.length) return;
+    const ctx = String(a.context || '').replace(/\s+/g, ' ');
+    const score = i => { const around = full.slice(Math.max(0, i - 40), i + want.length + 40).replace(/\s+/g, ' '); let s = 0; for (const piece of [around.slice(0, 30), around.slice(-30)]) if (piece.trim() && ctx.includes(piece.trim())) s++; return s; };
+    const at = hits.length === 1 ? hits[0] : hits.reduce((b, i) => score(i) > score(b) ? i : b, hits[0]);
+    const end = at + want.length, pieces = [];
+    nodes.forEach((n, k) => {
+      const s = starts[k], e = s + n.data.length;
+      if (e <= at || s >= end) return;
+      const from = Math.max(at, s) - s, to = Math.min(end, e) - s;
+      let mid = n; if (from > 0) mid = mid.splitText(from); if (to - from < mid.data.length) mid.splitText(to - from);
+      const m = document.createElement('mark'); m.className = 'dc-noted'; m.dataset.thread = c.id; m.title = 'You commented here — open the thread';
+      mid.parentNode.insertBefore(m, mid); m.appendChild(mid); pieces.push(m);
+    });
+    if (pieces.length) pieces[pieces.length - 1].dataset.last = '1';
+  };
+  document.addEventListener('click', ev => {
+    const m = ev.target.closest && ev.target.closest('mark.dc-noted'); if (!m) return;
+    if ((window.getSelection() || '').toString().trim()) return;   // a drag over a mark is a selection, not a jump
+    window.dcOpenSection?.('conversation');
+    const th = document.getElementById('t-' + m.dataset.thread); if (!th) return;
+    th.scrollIntoView({behavior: 'smooth', block: 'center'}); th.classList.add('flash'); setTimeout(() => th.classList.remove('flash'), 1600);
+  });
+  fb.filter(e => e.type === 'comment' && e.id && e.anchor).forEach(markAnchor);
   afterCode(document);
   const openLineAsk = el => {
     sel = lineAnchor(el);

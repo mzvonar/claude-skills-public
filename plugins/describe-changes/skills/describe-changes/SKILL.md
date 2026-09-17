@@ -1,6 +1,6 @@
 ---
 name: describe-changes
-version: "1.20.1"
+version: "1.21.0"
 description: >
   Present an implemented change to a human reviewer the way a human needs it: what was done and why,
   a visual map of the high-level change (who calls whom, where data flows, what moved/split/renamed),
@@ -233,7 +233,7 @@ sleep 0.5; cat "$OUT/serve.log"
 Give the user the **LAN and Tailscale URLs** (phone-friendly) and the local path. **Pass the URLs
 exactly as printed — each carries a `?k=…` token** minted for this run; the server binds 0.0.0.0 (a
 phone cannot reach a loopback bind) and refuses any request that has neither the token nor the cookie
-the first open sets. `--no-token` serves openly for a trusted setup, and says so in its banner. The
+the first open sets (named per port, so several reports served from one machine keep their own). `--no-token` serves openly for a trusted setup, and says so in its banner. The
 page is self-contained except the mermaid renderer (CDN). The map is a **canvas, not a picture** --
 drag to pan, scroll or pinch to zoom, `Fit` restores the overview, `List` shows the same graph as
 text with full paths. If the CDN never answers, the canvas stays plain and that text list is what
@@ -315,7 +315,9 @@ For each follow-up:
   `python3 "$S/feedback.py" question "<the question>" --dir "$OUT" [--finding C1] [--answered-by-reading src/x.ts:40-80]`
 - **Fetch page comments.** The report takes reader input FIVE ways, and `comments` returns all of
   them: selecting any text (a symbol in the summary, a sentence in a phase, a line in a card) and
-  asking about it; **tapping the line number beside any line of code** — every diff in the report
+  asking about it — the words stay marked on the page afterwards, a faint highlight with a 💬 that jumps
+  to the thread, so a reader sees where they already commented without leaving the text; **tapping the
+  line number beside any line of code** — every diff in the report
   carries a gutter, whether it sits in a finding card, a file sheet or a fold; a note typed into a
   **finding** card; a note typed into a **verification check** card; and a **reply typed into a
   thread in the Conversation section**. Never filter to one type by
