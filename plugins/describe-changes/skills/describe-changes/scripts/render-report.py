@@ -387,8 +387,13 @@ def set_status_index(model):
     STATUS.clear()
     for f in model.get("files", []):
         st = f.get("status") or ""
-        if f.get("moved_from") or f.get("old_path") or st in ("renamed", "moved"): st = "moved"
-        elif st not in ("added", "deleted", "modified"): st = "modified" if st else ""
+        old = f.get("old_path") or ""
+        # An added file records `/dev/null` as its old path; only a real, different old path is a move.
+        moved = bool(f.get("moved_from")) or (old not in ("", "/dev/null") and old != f["path"]) or st in ("renamed", "moved")
+        if st == "added": st = "added"
+        elif st == "deleted": st = "deleted"
+        elif moved: st = "moved"
+        elif st: st = "modified"
         if st: STATUS[f["path"]] = st
 
 def st_attr(path):

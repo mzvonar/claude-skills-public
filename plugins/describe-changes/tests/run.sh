@@ -352,6 +352,10 @@ assert not bad, bad
 assert {"added", "modified"} <= sts, sts
 assert re.search(r'class="fpath" data-open="src/util/text\.ts" data-st="', h), "phase path without a status"
 assert re.search(r'class="rp" data-st="', h), "Everything else row without a status"
+# `big-a.ts` is new on disk but a split target, so `added` or `moved` are both right; what must never
+# happen is the `/dev/null` old path of a new file reading as a move — every new file in the fixture
+# is a split target, so the closed value set above plus this row is the guard.
+m = re.search(r'data-open="src/util/big-a\.ts" data-st="([^"]+)"', h); assert m and m.group(1) in ("added", "moved"), m and m.group(1)
 print("file status attributes OK")
 PY
 # How to check: cards render, the API one is runnable, and the Postman collection is real JSON

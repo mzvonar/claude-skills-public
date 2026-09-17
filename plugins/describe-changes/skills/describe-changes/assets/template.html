@@ -122,9 +122,19 @@ section>h2.sec-t .lhs{display:flex;align-items:center;gap:0;min-width:0}
    finding locators, the sheet title — in the four colours the map legend already uses. Colour never
    stands alone: a glyph carries the same fact for anyone who cannot tell the hues apart. */
 :root{--st-add:#68d391;--st-mod:#f6ad55;--st-del:#fc8181;--st-mov:#63b3ed}
-[data-st=added]{color:var(--st-add)}[data-st=modified]{color:var(--st-mod)}[data-st=deleted]{color:var(--st-del)}[data-st=moved]{color:var(--st-mov)}
-[data-st]::before{font-weight:700;margin-right:.3em;opacity:.9}
-[data-st=added]::before{content:'+'}[data-st=modified]::before{content:'~'}[data-st=deleted]::before{content:'−'}[data-st=moved]::before{content:'→'}
+/* Element + attribute, because `button.fpath` and `.fchip` set their own colour later in this sheet
+   and a bare attribute selector loses to both. The path chip keeps its ⟨/⟩ behind the status glyph. */
+button.fpath[data-st=added],.fchip[data-st=added],.rp[data-st=added],.loc[data-st=added],#sheet-t[data-st=added],.stleg i[data-st=added]{color:var(--st-add)}
+button.fpath[data-st=modified],.fchip[data-st=modified],.rp[data-st=modified],.loc[data-st=modified],#sheet-t[data-st=modified],.stleg i[data-st=modified]{color:var(--st-mod)}
+button.fpath[data-st=deleted],.fchip[data-st=deleted],.rp[data-st=deleted],.loc[data-st=deleted],#sheet-t[data-st=deleted],.stleg i[data-st=deleted]{color:var(--st-del)}
+button.fpath[data-st=moved],.fchip[data-st=moved],.rp[data-st=moved],.loc[data-st=moved],#sheet-t[data-st=moved],.stleg i[data-st=moved]{color:var(--st-mov)}
+button.fpath[data-st]::before{color:inherit}
+button.fpath[data-st=added]::before{content:"+ ⟨/⟩ "}button.fpath[data-st=modified]::before{content:"~ ⟨/⟩ "}button.fpath[data-st=deleted]::before{content:"− ⟨/⟩ "}button.fpath[data-st=moved]::before{content:"→ ⟨/⟩ "}
+.fchip[data-st]::before,.rp[data-st]::before,.loc[data-st]::before,#sheet-t[data-st]::before,.stleg i[data-st]::before{font-weight:700;margin-right:.3em}
+.fchip[data-st=added]::before,.rp[data-st=added]::before,.loc[data-st=added]::before,#sheet-t[data-st=added]::before,.stleg i[data-st=added]::before{content:"+"}
+.fchip[data-st=modified]::before,.rp[data-st=modified]::before,.loc[data-st=modified]::before,#sheet-t[data-st=modified]::before,.stleg i[data-st=modified]::before{content:"~"}
+.fchip[data-st=deleted]::before,.rp[data-st=deleted]::before,.loc[data-st=deleted]::before,#sheet-t[data-st=deleted]::before,.stleg i[data-st=deleted]::before{content:"−"}
+.fchip[data-st=moved]::before,.rp[data-st=moved]::before,.loc[data-st=moved]::before,#sheet-t[data-st=moved]::before,.stleg i[data-st=moved]::before{content:"→"}
 .stleg{display:flex;flex-wrap:wrap;gap:.9rem;font-size:.72rem;color:var(--fg3);margin:.35rem 0 .6rem}
 .stleg i{font-style:normal}
 /* A comment left on prose: a faint mark on the exact words plus a superscript link to its thread.
