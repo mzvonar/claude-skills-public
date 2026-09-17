@@ -118,6 +118,15 @@ section>h2.sec-t .lhs{display:flex;align-items:center;gap:0;min-width:0}
 .diff .l.has-c{box-shadow:inset 3px 0 0 var(--info)}
 .diff .l.has-c .ln{color:var(--info);font-weight:700}
 .diff .l.has-c .ln::before{opacity:1}
+/* File status on every file reference — phase lists, view chips, "Everything else" rows, folds,
+   finding locators, the sheet title — in the four colours the map legend already uses. Colour never
+   stands alone: a glyph carries the same fact for anyone who cannot tell the hues apart. */
+:root{--st-add:#68d391;--st-mod:#f6ad55;--st-del:#fc8181;--st-mov:#63b3ed}
+[data-st=added]{color:var(--st-add)}[data-st=modified]{color:var(--st-mod)}[data-st=deleted]{color:var(--st-del)}[data-st=moved]{color:var(--st-mov)}
+[data-st]::before{font-weight:700;margin-right:.3em;opacity:.9}
+[data-st=added]::before{content:'+'}[data-st=modified]::before{content:'~'}[data-st=deleted]::before{content:'−'}[data-st=moved]::before{content:'→'}
+.stleg{display:flex;flex-wrap:wrap;gap:.9rem;font-size:.72rem;color:var(--fg3);margin:.35rem 0 .6rem}
+.stleg i{font-style:normal}
 /* A comment left on prose: a faint mark on the exact words plus a superscript link to its thread.
    Reading is never blocked — no popover, no layout shift; the mark is the only trace until the
    reader follows it. Diff lines carry their own marker in the gutter (has-c) instead. */
@@ -562,7 +571,9 @@ __BODY__
     window.scrollTo(0, lockedY);
   };
   const showSheet = () => { sheet.classList.add('show'); sheetBg.classList.add('show'); lockPage(); };
-  const openSheet = f => { $('#sheet-t').textContent = f + (STORE[f] ? ' · ' + STORE[f].status : ''); $('#sheet-b').innerHTML = codeFor(f); afterCode($('#sheet-b')); showSheet(); };
+  // The sheet title carries the file's status like every other reference (colour + glyph).
+  const statusOf = s => !s ? '' : /moved from|←/.test(s) ? 'moved' : (s.split(' ')[0] || '');
+  const openSheet = f => { const t = $('#sheet-t'); t.textContent = f + (STORE[f] ? ' · ' + STORE[f].status : ''); const st = statusOf(STORE[f] && STORE[f].status); if (st) t.dataset.st = st; else delete t.dataset.st; $('#sheet-b').innerHTML = codeFor(f); afterCode($('#sheet-b')); showSheet(); };
   const closeSheet = () => { sheet.classList.remove('show'); sheetBg.classList.remove('show'); unlockPage(); };
   // Delegated on [data-open], not on a class: every file reference anywhere in the report — view
   // chips, phase paths, the uncommitted list — opens that file's changes, and anything added later
@@ -570,7 +581,7 @@ __BODY__
   let HUNKS = {}; try { HUNKS = JSON.parse(document.getElementById('hunk-store').textContent); } catch(e) {}
   const openHunks = (ids, label) => {
     const html = ids.split(',').map(id => HUNKS[id] || '').join('');
-    $('#sheet-t').textContent = label + ' · folded change';
+    $('#sheet-t').textContent = label + ' · folded change'; delete $('#sheet-t').dataset.st;
     $('#sheet-b').innerHTML = html || '<div class="empty">this hunk was not captured</div>';
     afterCode($('#sheet-b'));
     showSheet();

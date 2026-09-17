@@ -1,6 +1,6 @@
 ---
 name: describe-changes
-version: "1.21.0"
+version: "1.22.0"
 description: >
   Present an implemented change to a human reviewer the way a human needs it: what was done and why,
   a visual map of the high-level change (who calls whom, where data flows, what moved/split/renamed),
@@ -237,7 +237,9 @@ the first open sets (named per port, so several reports served from one machine 
 page is self-contained except the mermaid renderer (CDN). The map is a **canvas, not a picture** --
 drag to pan, scroll or pinch to zoom, `Fit` restores the overview, `List` shows the same graph as
 text with full paths. If the CDN never answers, the canvas stays plain and that text list is what
-the reader gets.
+the reader gets. Every file reference on the page — phase lists, view chips, "Everything else",
+folds, finding locators, the sheet title — carries its status in colour and a glyph (`+` new, `~`
+changed, `−` deleted, `→` moved), the same four the map legend uses.
 If the `Artifact` tool is available and the user is remote, you may also publish `$OUT/index.html`
 (keep the same file path on re-publish). Skip all of this with `--chat-only`.
 

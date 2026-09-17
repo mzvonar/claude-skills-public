@@ -343,6 +343,17 @@ grep -q 'id="file-store"' "$OUT/index.html" && grep -q 'data-open="src/api/users
 # Every listed file opens its own diff (1.1.0). Phase lists were plain text before, which is the
 # one place a reader is handed filenames and then given no way to look at them.
 grep -q 'class="fpath" data-open="src/util/text.ts"' "$OUT/index.html" || fail "phase file paths are not clickable"
+# every file reference carries its status (colour + glyph in the page); the value set is closed
+python3 - "$OUT/index.html" <<'PY' || fail "file status attributes"
+import re, sys
+h = open(sys.argv[1]).read()
+sts = set(re.findall(r'data-st="([^"]+)"', h)); bad = sts - {"added", "modified", "deleted", "moved"}
+assert not bad, bad
+assert {"added", "modified"} <= sts, sts
+assert re.search(r'class="fpath" data-open="src/util/text\.ts" data-st="', h), "phase path without a status"
+assert re.search(r'class="rp" data-st="', h), "Everything else row without a status"
+print("file status attributes OK")
+PY
 # How to check: cards render, the API one is runnable, and the Postman collection is real JSON
 # carrying a {{base}} variable rather than a host baked in at render time.
 grep -q 'id="check"' "$OUT/index.html" || fail "how-to-check section missing"

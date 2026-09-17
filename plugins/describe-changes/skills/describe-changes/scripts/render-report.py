@@ -276,7 +276,7 @@ def finding_card(f, hunks, note=None, known=None):
     {('<div class="kv"><b>What changed</b>' + E(f["what"]) + '</div>') if f.get("what") else ""}
     {prov_badge(f.get("provenance"))}
     {('<div class="tags">' + "".join(f'<span class="tag">{E(t)}</span>' for t in tags) + '</div>') if tags else ""}
-    <div><span class="loc" data-loc="{E(loc)}">⧉ {E(loc)}</span></div>
+    <div><span class="loc" data-loc="{E(loc)}"{st_attr(f["file"])}>⧉ {E(loc)}</span></div>
     {db_sidecar_html(f, known) if is_db else ""}
     {('<details class="more"><summary>Show code</summary>' + code + '</details>') if code else ""}
     <div class="fb"><button data-t="more">▲ More important</button><button data-t="less">▼ Less important</button><button data-t="noise" class="danger">✕ Noise</button><button data-t="checked">✓ Checked</button></div>
@@ -377,6 +377,27 @@ def two_readings_section(report, findings):
 
 CH_LABEL = {"added": "new", "modified": "changed", "removed": "deleted", "moved": "moved", "renamed": "renamed", "split": "split", "unchanged": ""}
 
+# File status → the colour and glyph every file reference carries as `data-st`. Filled once per
+# render from the model (`set_status_index`), so the phase lists, the views, "Everything else", the
+# folds, the finding locators and the sheet title all agree, and a path outside the diff carries
+# nothing. `moved` covers a rename or a move whichever way the classifier recorded it.
+STATUS = {}
+
+def set_status_index(model):
+    STATUS.clear()
+    for f in model.get("files", []):
+        st = f.get("status") or ""
+        if f.get("moved_from") or f.get("old_path") or st in ("renamed", "moved"): st = "moved"
+        elif st not in ("added", "deleted", "modified"): st = "modified" if st else ""
+        if st: STATUS[f["path"]] = st
+
+def st_attr(path):
+    st = STATUS.get(path)
+    return f' data-st="{st}"' if st else ""
+
+STATUS_LEGEND = ('<div class="stleg"><i data-st="added">new</i><i data-st="modified">changed</i>'
+                 '<i data-st="deleted">deleted</i><i data-st="moved">moved</i></div>')
+
 def hunk_html_capped(h, path, max_lines):
     """`hunk_html`, showing at most `max_lines` of the hunk's own lines.
 
@@ -400,7 +421,7 @@ def fchip(node):
     """Clickable file chip → opens that file's changed code in the sheet."""
     f = node.get("file")
     if not f: return ""
-    return f'<button class="fchip" data-open="{E(f)}" title="{E(f)}">⟨/⟩ {E(os.path.basename(f))}</button>'
+    return f'<button class="fchip" data-open="{E(f)}"{st_attr(f)} title="{E(f)}">⟨/⟩ {E(os.path.basename(f))}</button>'
 
 def fpath(path, known=None):
     """A file path listed in prose (phases, uncommitted set) — clickable to its diff.
@@ -413,7 +434,7 @@ def fpath(path, known=None):
     """
     if known is not None and path not in known:
         return f"<span>{E(path)}</span>"
-    return f'<button class="fpath" data-open="{E(path)}" title="Show the changes in {E(path)}">{E(path)}</button>'
+    return f'<button class="fpath" data-open="{E(path)}"{st_attr(path)} title="Show the changes in {E(path)}">{E(path)}</button>'
 
 def pill(change):
     return f'<span class="chg chg-{E(change)}">{E(CH_LABEL.get(change, change))}</span>' if change and change != "unchanged" else ""
@@ -677,7 +698,7 @@ def fold_ref(path, hunk_ids, hunks, label=None):
     mine = [hid for hid in (hunk_ids or []) if hid in hunks and hunks[hid][1] == path]
     if not mine:
         return fpath(path, known=None) if label is None else f"<span>{E(label or path)}</span>"
-    return (f'<button class="fpath" data-open-hunks="{E(",".join(mine))}" data-open-label="{E(path)}"'
+    return (f'<button class="fpath" data-open-hunks="{E(",".join(mine))}" data-open-label="{E(path)}"{st_attr(path)}'
             f' title="Show the folded change in {E(path)}">{E(label or path)}</button>')
 
 UNNAMED_COMPONENT = "the receiving component is not named inside the hunk"
@@ -691,7 +712,7 @@ def flow_node(label, path, hids, hunks, known):
     mine = [hid for hid in (hids or []) if hid in (hunks or {}) and hunks[hid][1] == path]
     if mine: return fold_ref(path, hids, hunks, label=label)
     if known is not None and path not in known: return f'<span class="dim">{E(label)}</span>'
-    return f'<button class="fpath" data-open="{E(path)}" title="Show the changes in {E(path)}">{E(label)}</button>'
+    return f'<button class="fpath" data-open="{E(path)}"{st_attr(path)} title="Show the changes in {E(path)}">{E(label)}</button>'
 
 def flow_tree(item, hunks, known=None):
     """Where a threaded prop flows: pass-site file → the component it hands the prop to → that
@@ -799,6 +820,7 @@ def main():
     d = a.dir
     report = json.load(open(os.path.join(d, "report.json")))
     model = json.load(open(os.path.join(d, "diff-model.json")))
+    set_status_index(model)
     meta = json.load(open(os.path.join(d, "meta.json"))) if os.path.exists(os.path.join(d, "meta.json")) else {}
     raw = open(os.path.join(d, "raw.diff"), encoding="utf-8", errors="replace").read() if os.path.exists(os.path.join(d, "raw.diff")) else ""
     hunks = index_hunks(classify_diff.parse(raw)) if raw else {}
@@ -944,7 +966,7 @@ def main():
         b.append('<div class="empty">No structural map for this change.</div>')
     b.append("</section>")
 
-    b.append(f'<section id="phases"><h2>How it was built <span class="cnt">{len(report["phases"])} phases, in dependency order</span></h2>')
+    b.append(f'<section id="phases"><h2>How it was built <span class="cnt">{len(report["phases"])} phases, in dependency order</span></h2>' + STATUS_LEGEND)
     for i, p in enumerate(report["phases"], 1):
         files = "".join(fpath(x, known_paths) for x in p.get("files", []))
         b.append(f'<div class="card{" open" if i == 1 else ""}"><div class="card-h"><span class="tw">▶</span><span class="pill phase">{i}</span><div class="title">{E(p["title"])}</div></div>'
@@ -1102,7 +1124,7 @@ def main():
     by_area = {k: [f for f in rest if (f.get("area") or "code") == k] for k, _ in AREAS}
     area_counts = " · ".join(f'{len(by_area[k])} {lbl.lower()}' for k, lbl in AREAS if by_area[k] or k == "tests")
     b.append(f'<section id="unreviewed"><h2>Everything else that changed <span class="cnt">{len(rest)} files, nothing flagged{(" — " + area_counts) if rest else ""}</span></h2><div class="unrev">')
-    b.append('<div class="empty">Substantive but not surfaced. Fresh eyes welcome — ⚑ raises a gut-flag for Claude to dig into.</div>')
+    b.append('<div class="empty">Substantive but not surfaced. Fresh eyes welcome — ⚑ raises a gut-flag for Claude to dig into.</div>' + STATUS_LEGEND)
     # One store of per-file changed code (substantive hunks, capped) — read lazily by the
     # "Everything else" rows and by every ⟨/⟩ file chip in the views.
     MAX_LINES = 400
@@ -1127,7 +1149,7 @@ def main():
           b.append('<div class="empty area-empty">No test file changed.</div>')
       for f in by_area[area_key]:
         why = (report.get("unreviewed_notes") or {}).get(f["path"], "")
-        b.append(f'<div class="row fold-row" data-file="{E(f["path"])}"><span class="tw">▶</span><span class="rp">{E(f["path"])} <span style="color:var(--fg3)">· {E(store[f["path"]]["status"])} · {f["substantive_hunks"]} hunk{"s" if f["substantive_hunks"] != 1 else ""}{(" · " + E(why)) if why else ""}</span></span><button data-file="{E(f["path"])}">⚑</button></div>'
+        b.append(f'<div class="row fold-row" data-file="{E(f["path"])}"><span class="tw">▶</span><span class="rp"{st_attr(f["path"])}>{E(f["path"])} <span style="color:var(--fg3)">· {E(store[f["path"]]["status"])} · {f["substantive_hunks"]} hunk{"s" if f["substantive_hunks"] != 1 else ""}{(" · " + E(why)) if why else ""}</span></span><button data-file="{E(f["path"])}">⚑</button></div>'
                  f'<div class="row-body" data-file="{E(f["path"])}"><div class="row-code"></div><div class="row-close"><button class="btn">▲ Collapse {E(os.path.basename(f["path"]))}</button></div></div>')
     b.append("</div></section>")
 
