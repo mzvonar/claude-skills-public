@@ -1,6 +1,6 @@
 ---
 name: describe-changes
-version: "1.25.0"
+version: "1.25.1"
 description: >
   Present an implemented change to a human reviewer the way a human needs it: what was done and why,
   a visual map of the high-level change (who calls whom, where data flows, what moved/split/renamed),
@@ -271,7 +271,13 @@ un-ticked), the commits that landed in between, the scope delta. Identical state
 twice, so re-rendering while you edit does not bury the version the reader actually read.
 
 The same delta is also a **page of its own**: `delta-<seq>.html` per earlier snapshot (`delta.html`
-is the newest), plus a picker across them and a link back to the whole report. Point a returning
+is the newest), plus a picker across them and a link back to the whole report. **The report lists
+every one of them** — one row per reading, oldest (the whole arc) to newest (since your last
+reading) — because a reader who has been away two readings needs the page that covers both, and a
+single link to the newest hid that the others existed. On a delta page every file sheet carries the
+range as a badge: both halves of a delta are scoped, the file list AND the diffs, but a line whose
+only change is a renamed token reads as one the reader remembers from before unless the page says
+what window they are looking through. Point a returning
 reader at `/delta.html` and someone who has been away longer at the oldest one, which is the entire
 arc since the first description. Ticks are shared — a check verified on a delta page is verified on
 the report.

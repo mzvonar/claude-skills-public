@@ -428,6 +428,10 @@ button.fpath:active{border-color:var(--info)}
    phase's file list, a view's chips, a DB package's migrations — and stop at its ends rather than
    wrapping or crossing into the next group. The position label is what makes a stopped arrow
    legible: a dead control with no "3 of 3" beside it reads as broken, not as the end of the list. */
+.sheet-scope{flex:none;font-size:.7rem;font-family:var(--mono);color:var(--info);border:1px solid var(--info);border-radius:999px;padding:.1rem .45rem;white-space:nowrap}
+@media (max-width:520px){.sheet-scope{display:none}}
+.dl-pages{margin:.2rem 0 0;padding-left:1.1rem}
+.dl-pages li{margin:.15rem 0}
 .sheet-nav{display:flex;align-items:center;gap:.35rem;flex:none}
 /* `display:flex` above outranks the UA stylesheet's `[hidden]{display:none}`, so without this the
    nav survives being hidden and shows the last group's "1 of 2" over a file that has no group —

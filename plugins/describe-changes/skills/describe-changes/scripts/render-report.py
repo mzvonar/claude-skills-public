@@ -518,7 +518,7 @@ def pick_delta(d, report, meta, model):
     return before, snapshots.compute_delta(before, {"info": {"name": "now"}, "report": report,
                                                     "meta": meta, "model": model})
 
-def delta_section(before, dl, has_page=False):
+def delta_section(before, dl, has_page=False, pages=()):
     """What moved since the last snapshot — the returning reader's whole question, answered up top.
 
     Silent when nothing changed: a section that always appears and usually says "no change" trains
@@ -558,8 +558,21 @@ def delta_section(before, dl, has_page=False):
     if not rows:
         return ""
     head = delta_head(before, dl)
-    link = ('<div class="dl-more"><a href="delta.html">Open this as its own page — with the code, '
-            'and a picker for any earlier snapshot →</a></div>') if has_page else ""
+    link = ""
+    if has_page:
+        # One row per reading, oldest first: the oldest page is the whole arc since the first
+        # description, the newest is "since you last read this". Naming the span on each row is what
+        # lets a reader who has been away twice pick the right one without opening both.
+        rows_p = []
+        for i, pg in enumerate(pages):
+            span = "the whole arc since the first reading" if i == 0 and len(pages) > 1 else \
+                   ("since your last reading" if i == len(pages) - 1 else "an intermediate reading")
+            rows_p.append(f'<li><a href="delta-{pg["seq"]:03d}.html">since {pg["seq"]:03d} · '
+                          f'{E(pg.get("label") or pg["name"])}</a> <span class="dim">— {E(span)}</span></li>')
+        if not rows_p:
+            rows_p.append('<li><a href="delta.html">Open this as its own page — with the code →</a></li>')
+        link = ('<div class="dl-more"><b>As its own page, with the code</b><ul class="dl-pages">'
+                + "".join(rows_p) + "</ul></div>")
     return (f'<section id="since"><h2>Since you last read this <span class="cnt">{head}</span></h2>'
             f'<div class="card open delta"><div class="card-b">{"".join(rows)}{link}</div></div></section>')
 
@@ -846,6 +859,8 @@ def main():
     ap.add_argument("--no-delta-pages", action="store_true", help="skip the per-snapshot delta pages")
     ap.add_argument("--picker", help="HTML nav injected into the header (used by the delta pages)")
     ap.add_argument("--subtitle", help="override the header subtitle (used by the delta pages)")
+    ap.add_argument("--scope-label", help="range this page is scoped to, shown on every file sheet "
+                                          "(used by the delta pages, where a diff is NOT the whole branch)")
     ap.add_argument("--report-id", help="share the parent report's feedback bucket")
     ap.add_argument("--snapshot-label", help="name this snapshot (e.g. 'first pass', 'after review fixes')")
     a = ap.parse_args()
@@ -940,7 +955,12 @@ def main():
     # read twice is answering a different question the second time — what moved — and making the
     # returning reader re-scan everything to find out is the same attention tax as an unfolded diff.
     before_snap, dl_now = pick_delta(d, report, meta, model)
-    b.append(delta_section(before_snap, dl_now, has_page=bool(dl_now) and not a.out and not a.no_delta_pages))
+    # Derived from the SAME predicate the delta-page loop uses below, so the list and the pages
+    # cannot disagree — a link to a page that was never written is worse than no link.
+    _fp_now = snapshots._fingerprint(report, meta)
+    delta_pages = [x for x in snapshots.list_snapshots(d) if x.get("fingerprint") != _fp_now]
+    b.append(delta_section(before_snap, dl_now, has_page=bool(dl_now) and not a.out and not a.no_delta_pages,
+                           pages=delta_pages))
 
     # Intent leads, small and quiet — it FRAMES the summary instead of repeating it. Rendering it
     # after, as an equal-weight paragraph, is what made the two read as duplicates.
@@ -1233,8 +1253,10 @@ def main():
         store_used += shown
         hunk_store[hid] = chtml + (f'<div class="empty">… {c} more lines not shown (open the file for the rest)</div>' if c else "")
     b.append('<script type="application/json" id="hunk-store">' + json.dumps(hunk_store).replace("</", "<\\/") + '</script>')
+    scope_badge = (f'<span class="sheet-scope" title="This page is scoped to one range; the file below shows only that range">{E(a.scope_label)}</span>'
+                   if a.scope_label else "")
     b.append('<div class="sheet-bg" id="sheet-bg"></div><div class="sheet" id="sheet"><div class="sheet-h">'
-             '<span class="sheet-t" id="sheet-t"></span>'
+             '<span class="sheet-t" id="sheet-t"></span>' + scope_badge +
              '<span class="sheet-nav" id="sheet-nav" hidden><button class="btn" id="sheet-prev" aria-label="Previous file in this group">‹</button><span class="sheet-pos" id="sheet-pos"></span><button class="btn" id="sheet-next" aria-label="Next file in this group">›</button></span>'
              '<button class="btn" id="sheet-x">✕</button></div><div class="sheet-b" id="sheet-b"></div></div>')
 
@@ -1285,6 +1307,7 @@ def main():
                 rc = subprocess.run([sys.executable, os.path.abspath(__file__), "--dir", sub, "--out", p,
                                      "--no-snapshot", "--no-delta-pages", "--picker", picker,
                                      "--subtitle", " · ".join(bits),
+                                     "--scope-label", f'since {(bef.get("info") or {}).get("label") or (bef.get("info") or {}).get("name", "the last reading")}',
                                      "--report-id", report_id], capture_output=True, text=True)
                 if rc.returncode != 0:
                     sub = None
