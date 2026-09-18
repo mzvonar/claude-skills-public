@@ -123,12 +123,21 @@ def tree_commit(root, slug, seq, exclude=()):
     (`refs/describe-changes/…`) keeps the object alive against gc while staying out of branches,
     tags and pushes. This is what lets a later reading diff CODE against an earlier reading.
     """
-    if not root or not os.path.isdir(os.path.join(root, ".git")):
+    if not root:
+        return None
+    # ASK git where its dir is; do not assume `<root>/.git` is one. It is a directory in a plain
+    # clone and a FILE holding `gitdir: …/worktrees/<name>` in a linked worktree (and in a
+    # submodule), so an `isdir` guard here returned None for every worktree — which wrote
+    # `tree_sha: null`, and left `build_code_delta` permanently on its "no tree refs" fallback, so
+    # delta pages showed cards and never the code. The scratch index goes in the real git dir for
+    # the same reason: it cannot be written inside a file.
+    gitdir = _git(root, "rev-parse", "--absolute-git-dir")
+    if not gitdir or not os.path.isdir(gitdir):
         return None
     head = _git(root, "rev-parse", "HEAD")
     if not head:
         return None
-    idx = os.path.join(root, ".git", f"dc-index-{seq}")
+    idx = os.path.join(gitdir, f"dc-index-{seq}")
     env = dict(os.environ, GIT_INDEX_FILE=idx)
     try:
         if _git(root, "read-tree", head, env=env) is None: return None

@@ -6,7 +6,7 @@ Enforces the credibility budget: ≤ 3 critical (hard), ≤ 7 medium (warn), eve
 `why_human` + `verify`, every file referenced exists in diff-model.json, every graph edge
 references a known node, ids are unique and follow C1/M1/L1 numbering.
 """
-import json, sys, os, re
+import json, sys, os, re, subprocess
 
 SEV = {"critical": "C", "medium": "M", "low": "L"}
 SEV_RANK = {"critical": 0, "medium": 1, "low": 2}
@@ -30,9 +30,15 @@ def repo_root_of(report_path):
         meta = json.load(open(os.path.join(d, "meta.json")))
         if meta.get("root") and os.path.isdir(meta["root"]): return meta["root"]
     except Exception: pass
-    while d != "/":                                   # the report lives inside the repo it describes
-        if os.path.isdir(os.path.join(d, ".git")): return d
-        d = os.path.dirname(d)
+    # The report lives inside the repo it describes, so ask git rather than walking up looking for a
+    # `.git` DIRECTORY — in a linked worktree `.git` is a file and the walk runs past the root to /.
+    try:
+        r = subprocess.run(["git", "-C", d, "rev-parse", "--show-toplevel"],
+                           capture_output=True, text=True, timeout=15)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    except Exception:
+        pass
     return None
 
 def check_divergence(f, fid, root):
