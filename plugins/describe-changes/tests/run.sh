@@ -1439,7 +1439,25 @@ for f in ("feedback.py", "render-report.py"):
 print("thread identity OK")
 PI
 
+# END TO END: the rendered page carries syntax spans for a language the lexer models, and the diff
+# text still reconstructs exactly. The unit suite proves the lexer; this proves it is WIRED — the
+# renderer could import it and never call it and every unit row would still pass.
+S="$S" OUT="$OUT" python3 - <<'PI' || fail "highlighting not present in the rendered page"
+import os, re, html, sys
+page = open(os.path.join(os.environ["OUT"], "index.html"), encoding="utf-8").read()
+assert 'class="hl-k"' in page, "no keyword spans in the rendered page"
+assert 'class="hl-s"' in page, "no string spans in the rendered page"
+# The .ts fixture's own text must survive: pull one diff line and strip its tags.
+m = re.search(r'<div class="l [acd]"[^>]*>(?:<span class="ln"[^>]*>\d+</span>)(.*?)</div>', page, re.S)
+assert m, "no diff line found in the page"
+txt = html.unescape(re.sub(r"<[^>]+>", "", m.group(1)))
+assert "\n" not in txt, "a diff line gained a newline"
+print("highlighting wired OK")
+PI
+
 # The DB schema package + the four-bucket remainder have a fixture suite of their own.
 bash "$HERE/db-package.sh" || fail "db-package suite"
+# The render-time syntax lexer: round trip, state across lines, escaping, graceful fallback.
+bash "$HERE/highlight.sh" || fail "highlight suite"
 
 echo "ALL TESTS PASSED"

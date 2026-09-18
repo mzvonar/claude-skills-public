@@ -104,7 +104,26 @@ section>h2.sec-t .lhs{display:flex;align-items:center;gap:0;min-width:0}
 .diff .hh .hint{color:var(--fg3);margin-left:.6rem;font-size:.9em}
 .diff pre{padding:.4rem 0;margin:0}
 .diff .l{padding:0 .6rem;white-space:pre}
-.diff .l.a{background:rgba(47,133,90,.22);color:#c6f6d5}.diff .l.d{background:rgba(197,48,48,.22);color:#fed7d7}.diff .l.c{color:var(--fg3)}
+/* Added/deleted lines keep their BACKGROUND tint and hand the TEXT colour to the syntax tokens.
+   The tint is what says "this changed"; a flat green/red wash over the code says it a second time
+   at the cost of saying anything else — which is why every diff viewer that highlights keeps the
+   tint and drops the wash. The line colour below is therefore the colour of what is NOT a token
+   (punctuation, plain identifiers), and it is the same on added and context lines so that `const`
+   does not read brighter on one than the other.
+
+   Tokens are emitted server-side by scripts/highlight.py, so there is no CDN, nothing to fail when
+   the page opens, and `file://` looks like the served page. A language the lexer does not model
+   emits no spans at all and the line simply renders in these colours. */
+.diff .l.a{background:rgba(47,133,90,.22);color:#cbd5e0}
+.diff .l.d{background:rgba(197,48,48,.22);color:#cbd5e0}
+.diff .l.c{color:#8a93a3}
+.diff .l.c .hl-c,.diff .l.c .hl-s,.diff .l.c .hl-k,.diff .l.c .hl-n,.diff .l.c .hl-y,.diff .l.c .hl-fn{opacity:.75}
+.hl-c{color:#5f708a;font-style:italic}
+.hl-s{color:#9ae6b4}
+.hl-k{color:#d6a4f7;font-weight:600}
+.hl-n{color:#f6ad55}
+.hl-y{color:#7cc4f5}
+.hl-fn{color:#f0e4a8}
 /* The line-number gutter is the per-line comment control. `user-select:none` is what keeps the
    older select-the-code-and-ask gesture intact — without it every copied snippet carries numbers.
    The 💬 is absolutely positioned INSIDE the gutter's own empty left half, so revealing it on hover
@@ -330,6 +349,11 @@ button.fpath:active{border-color:var(--info)}
 .tr-g ul{margin:.35rem 0 0;padding-left:1.1rem}
 .tr-g li{margin:.2rem 0;font-size:.92rem}
 .tr-g .empty{padding:0 0 .2rem}
+.tloc{cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px}
+.tloc:hover,.tloc:focus-visible{color:var(--fg)}
+.floc{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;margin:.1rem 0 .3rem}
+.floc .fpath{max-width:100%;word-break:break-all;text-align:left}
+.loc.cp{padding:.25rem .45rem;flex:none}
 .loc-plain{font-family:var(--mono);font-size:.75rem;color:var(--fg3)}
 .thread{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:.85rem 1rem;margin-bottom:.75rem}
 .thread .anchor{font-family:var(--mono);font-size:.75rem;color:var(--info);word-break:break-word}
@@ -533,7 +557,7 @@ __BODY__
     catch(e) { prompt('Copy this feedback JSON', txt); }
   };
   // collapse / expand
-  $$('.card-h').forEach(h => h.addEventListener('click', ev => { if (ev.target.closest('button,textarea,.loc')) return; h.parentElement.classList.toggle('open'); }));
+  $$('.card-h').forEach(h => h.addEventListener('click', ev => { if (ev.target.closest('button,textarea,.loc,[data-open],[data-open-hunks]')) return; h.parentElement.classList.toggle('open'); }));
   // copy locations
   $$('.loc').forEach(l => l.addEventListener('click', async () => { try { await navigator.clipboard.writeText(l.dataset.loc); toast('Copied ' + l.dataset.loc); } catch(e) {} }));
   // filters

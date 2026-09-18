@@ -1,6 +1,6 @@
 ---
 name: describe-changes
-version: "1.23.0"
+version: "1.24.0"
 description: >
   Present an implemented change to a human reviewer the way a human needs it: what was done and why,
   a visual map of the high-level change (who calls whom, where data flows, what moved/split/renamed),
@@ -212,6 +212,8 @@ the exact shape in `reference/report-schema.md`. The non-negotiables:
   chat view and for exports that ship without a model. **`unreviewed_notes`:** one clause per substantive-but-unflagged file saying why it
   didn't make the cut (the honest "I looked, nothing to ask" list).
 - Be concrete: `file`, `lines` (new-side), `hunks: ["F3H2"]` so the renderer pulls the code for free.
+  A finding's `file` renders as a control in both places it appears — under the title and in the card body —
+  so every file name in the report opens its diff; the `⧉` beside it is the copy-the-reference control.
 
 ## 4. Validate (must pass)
 
@@ -237,8 +239,13 @@ the first open sets (named per port, so several reports served from one machine 
 page is self-contained except the mermaid renderer (CDN). The map is a **canvas, not a picture** --
 drag to pan, scroll or pinch to zoom, `Fit` restores the overview, `List` shows the same graph as
 text with full paths. If the CDN never answers, the canvas stays plain and that text list is what
-the reader gets. A file diff opened from a block carries `‹ N of M ›` for THAT block — a phase's
-file list, a view's chips, a DB package's migrations — and the arrows (or ← / →) step inside it only: at
+the reader gets. Code is syntax-highlighted at RENDER time by `scripts/highlight.py` (stdlib, no
+network), so the spans are in the HTML and `file://` looks like the served page; a language it does
+not model emits no spans and renders plain, which is the fallback and is deliberately common —
+Markdown, HTML and XML read worse under a keyword lexer, not better. Added and deleted lines keep
+their background tint and give up their green/red TEXT colour to the tokens, the way every diff
+viewer that highlights does. A file diff opened from a block carries `‹ N of M ›` for THAT block — a phase's
+file list, a view's chips, a DB package's migrations, the files of "What a human must check" — and the arrows (or ← / →) step inside it only: at
 either end the arrow goes inert rather than wrapping or crossing into the next block, so the reader can
 always tell which set they are still in. One area of "Everything else" steps the same way, in place,
 collapsing the row it leaves. Every file reference on the page — phase lists, view chips, "Everything else",

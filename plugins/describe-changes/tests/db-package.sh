@@ -131,14 +131,20 @@ assert len(notes) == 1 and "drops column Post.firmId" in notes[0], notes      # 
 assert "no findings" not in side.lower() and "nothing to see" not in side.lower(), "routine files must be bare filenames"
 assert 'class="ann"' in side and side.count("<li") == 3, "annotated file is a shade less muted; no per-file severity badge"
 assert not re.search(r'<li[^>]*>\s*<span class="pill', side), "no per-file severity badge in the sidecar"
+# The headline file OPENS: every file reference in a finding is a control to its diff. This card is
+# the one place a reader is sent to code on purpose, and the locator used to be copy-to-clipboard
+# only — clicking the file name did nothing visible.
+assert re.search(r'<div class="floc"><button class="fpath" data-open="prisma/schema\.prisma"', card), \
+    "the headline file must open its diff, not merely offer its path for copying"
+assert 'class="loc cp"' in card, "the ⧉ copy control stays beside it"
 # Placement: the migrations sit directly under the headline file's ⧉ locator, so the two read as
 # ONE group of files — after the reasons, and BEFORE the headline's own diff block.
 i_side = card.index('<details class="sidecar">')
 assert i_side > card.index('class="dbp"'), "sidecar must come after the reasons, not interrupt them"
-assert i_side > card.index('class="loc"'), "sidecar must come directly after the headline file locator"
+assert i_side > card.index('class="floc"'), "sidecar must come directly after the headline file locator"
 if "Show code" in card:
     assert i_side < card.index("Show code"), "sidecar belongs with the locator, above the diff block"
-between = card[card.index('class="loc"'):i_side]
+between = card[card.index('class="floc"'):i_side]
 assert "<details" not in between, f"nothing may sit between the locator and its migrations: {between[:120]}"
 # §7 — the exclusion trap: sidecar files must NOT reappear in "Everything else".
 unrev = re.search(r'<section id="unreviewed">(.*?)</section>', h, re.S).group(1)

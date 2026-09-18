@@ -10,6 +10,7 @@ import argparse, copy, html, json, os, re, shutil, subprocess, sys, hashlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import importlib.util
 import snapshots
+from highlight import language_for, scan, OPEN_NONE
 from report_keys import (check_key, finding_key, thread_turns, thread_is_open,
                          note_group_key, note_thread_id, check_group_key, check_thread_id)
 _spec = importlib.util.spec_from_file_location("classify_diff", os.path.join(os.path.dirname(os.path.abspath(__file__)), "classify-diff.py"))
@@ -114,6 +115,11 @@ def hunk_html(h, path):
     hattr = f' data-h="{E(hid)}"' if hid else ""
     old_n, new_n = getattr(h, "old_start", 0) or 0, getattr(h, "new_start", 0) or 0
     lines = []
+    # One language for the whole hunk, and one block-comment/string state carried down it. The
+    # marker column stays a bare text node so `codeOf()` in the page still reconstructs the line
+    # byte for byte — a selection quoted into a comment thread must match the file.
+    lang = language_for(path)
+    hl_state = OPEN_NONE
     for l in h.lines:
         if l.startswith("+"):
             cls, num, side = "a", new_n, "new"; new_n += 1
@@ -121,10 +127,12 @@ def hunk_html(h, path):
             cls, num, side = "d", old_n, "old"; old_n += 1
         else:
             cls, num, side = "c", new_n, "new"; new_n += 1; old_n += 1
+        marker, body = (l[:1], l[1:]) if l else ("", "")
+        code, hl_state = scan(body, lang, hl_state)
         lines.append(
             f'<div class="l {cls}" data-f="{E(path)}" data-n="{num}" data-side="{side}"{hattr}>'
             f'<span class="ln" role="button" tabindex="0" title="Comment on {E(path)}:{num}">{num}</span>'
-            f'{E(l)}</div>')
+            f'{E(marker)}{code}</div>')
     head = E(h.header.split("@@")[1].strip() if "@@" in h.header else "")
     return (f'<div class="diff" data-file="{E(path)}"><div class="hh">{E(path)} {head} '
             f'<span style="color:var(--fg3)">[{E(hid)}]</span>'
@@ -268,7 +276,7 @@ def finding_card(f, hunks, note=None, known=None):
     dbtag = '<span class="dbtag">DB schema change</span>' if is_db else ""
     return f'''<div class="card sev-{sev}{" db" if is_db else ""}" data-id="{E(f["id"])}" data-key="{E(finding_key(f))}" data-sev="{sev}" data-tags="{E(" ".join(tags))}">
   <div class="card-h"><span class="tw">▶</span><span class="pill {sev}">{E(f["id"])}</span>
-    <div class="title">{E(f["title"])}<small>{dbtag}{E(loc)}</small></div></div>
+    <div class="title">{E(f["title"])}<small>{dbtag}{tloc(f["file"], known, loc)}</small></div></div>
   <div class="card-b">
     <div class="verify"><b>Verify</b>{E(f["verify"])}</div>
     <div class="kv"><b>Why a human</b>{E(f["why_human"])}</div>
@@ -277,7 +285,7 @@ def finding_card(f, hunks, note=None, known=None):
     {('<div class="kv"><b>What changed</b>' + E(f["what"]) + '</div>') if f.get("what") else ""}
     {prov_badge(f.get("provenance"))}
     {('<div class="tags">' + "".join(f'<span class="tag">{E(t)}</span>' for t in tags) + '</div>') if tags else ""}
-    <div><span class="loc" data-loc="{E(loc)}"{st_attr(f["file"])}>⧉ {E(loc)}</span></div>
+    <div class="floc">{fpath(f["file"], known, loc)}<span class="loc cp" data-loc="{E(loc)}" title="Copy {E(loc)}">⧉</span></div>
     {db_sidecar_html(f, known) if is_db else ""}
     {('<details class="more"><summary>Show code</summary>' + code + '</details>') if code else ""}
     <div class="fb"><button data-t="more">▲ More important</button><button data-t="less">▼ Less important</button><button data-t="noise" class="danger">✕ Noise</button><button data-t="checked">✓ Checked</button></div>
@@ -429,18 +437,34 @@ def fchip(node):
     if not f: return ""
     return f'<button class="fchip" data-open="{E(f)}"{st_attr(f)} title="{E(f)}">⟨/⟩ {E(os.path.basename(f))}</button>'
 
-def fpath(path, known=None):
+def tloc(path, known, label):
+    """The file reference inside a card TITLE — opens the file, without looking like a button.
+
+    Same target as the body's control and deliberately not the same shape: the header is a title
+    line, so a boxed button there reads as a second action competing with the card's own expand.
+    Inert when the diff does not contain the path, for the reason in `fpath`.
+    """
+    if known is not None and path not in known:
+        return E(label)
+    return (f'<span class="tloc" data-open="{E(path)}"{st_attr(path)} role="button" tabindex="0"'
+            f' title="Show the changes in {E(path)}">{E(label)}</span>')
+
+def fpath(path, known=None, label=None):
     """A file path listed in prose (phases, uncommitted set) — clickable to its diff.
 
     Shows the FULL path, unlike `fchip`: these appear in lists where sibling features routinely
     contribute two `actions.ts` or two `membership.ts`, and a basename alone cannot tell them apart.
 
+    `label` overrides the TEXT without changing what opens — a finding shows `path:lines` while
+    still opening the file, because the line range is where the reader is going and the path is what
+    the file store is keyed by.
+
     A path the diff does not contain renders inert instead of opening an empty sheet — a control
     that does nothing when clicked teaches the reader that none of them work.
     """
     if known is not None and path not in known:
-        return f"<span>{E(path)}</span>"
-    return f'<button class="fpath" data-open="{E(path)}"{st_attr(path)} title="Show the changes in {E(path)}">{E(path)}</button>'
+        return f"<span>{E(label or path)}</span>"
+    return f'<button class="fpath" data-open="{E(path)}"{st_attr(path)} title="Show the changes in {E(path)}">{E(label or path)}</button>'
 
 def pill(change):
     return f'<span class="chg chg-{E(change)}">{E(CH_LABEL.get(change, change))}</span>' if change and change != "unchanged" else ""
@@ -986,7 +1010,9 @@ def main():
     b.append('<div class="filter"><button class="on" data-f="all">All</button><button data-f="critical">Critical</button><button data-f="medium">Medium</button><button data-f="low">Low</button>'
              + "".join(f'<button data-f="{E(t)}">{E(t)}</button>' for t in tags) + "</div>")
     if findings:
+        b.append('<div data-fgroup="What a human must check">')
         b.extend(finding_card(f, hunks, (card_notes.get(finding_key(f)) or {}).get("text"), known_paths) for f in findings)
+        b.append("</div>")
     else:
         b.append('<div class="empty">Nothing flagged. That is a claim, not a guarantee — the "Everything else" list below is what was looked at.</div>')
     b.append("</section>")

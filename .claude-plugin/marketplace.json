@@ -62,7 +62,7 @@
     {
       "name": "describe-changes",
       "source": "./plugins/describe-changes",
-      "version": "1.23.1",
+      "version": "1.24.0",
       "description": "Human-first description of an implemented change: intent, visual map, ranked review spots, folded noise, in chat and as a mobile-first HTML report.",
       "author": {
         "name": "Martin Zvon\u00e1r"
