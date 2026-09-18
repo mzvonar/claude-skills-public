@@ -223,7 +223,8 @@ def db_sidecar_html(f, known=None):
                         + (f'<div class="sc-note">{E(note)}</div>' if note else "") + "</li>")
         n = len(migs)
         return (f'<details class="sidecar"><summary>{n} migration{"s" if n != 1 else ""}'
-                f'{" · in run order" if many else ""}</summary><ol class="sc-l">{"".join(rows)}</ol></details>')
+                f'{" · in run order" if many else ""}</summary>'
+                f'<ol class="sc-l" data-fgroup="migrations">{"".join(rows)}</ol></details>')
     if pk.get("headline_kind") == "schema":
         # Case 3 (§6): the empty sidecar IS the finding. Rendered as a statement, never as a blank.
         return '<div class="sidecar sidecar-empty">No migration accompanies this schema change.</div>'
@@ -622,7 +623,9 @@ def delta_page(before, dl, report, hunks, file_store, tpl, title, report_id, pri
     b.append('<script type="application/json" id="file-store">' + json.dumps(small_store).replace("</", "<\\/") + '</script>')
     b.append('<script type="application/json" id="hunk-store">{}</script>')
     b.append('<div class="sheet-bg" id="sheet-bg"></div><div class="sheet" id="sheet"><div class="sheet-h">'
-             '<span class="sheet-t" id="sheet-t"></span><button class="btn" id="sheet-x">✕</button></div>'
+             '<span class="sheet-t" id="sheet-t"></span>'
+             '<span class="sheet-nav" id="sheet-nav" hidden><button class="btn" id="sheet-prev" aria-label="Previous file in this group">‹</button><span class="sheet-pos" id="sheet-pos"></span><button class="btn" id="sheet-next" aria-label="Next file in this group">›</button></span>'
+             '<button class="btn" id="sheet-x">✕</button></div>'
              '<div class="sheet-b" id="sheet-b"></div></div>')
     data = {"report_id": report_id, "repo": meta.get("repo", ""), "range_label": meta.get("range_label", ""),
             "prior": prior, "findings": [{"id": f["id"], "severity": f["severity"], "tags": f.get("tags", [])}
@@ -937,7 +940,7 @@ def main():
         b.append(f'<section id="view-{i}" class="view"><h2>{E(v.get("title") or v["kind"])} <span class="cnt">{E(v["kind"])}</span></h2>'
                  + (f'<div class="narr" style="margin-bottom:.6rem">{E(v["narrative"])}</div>' if v.get("narrative") else "")
                  + '<div class="legend"><span><i style="background:#1f5a3a"></i>new</span><span><i style="background:#6b4a12"></i>changed</span><span><i style="background:#6b1f1f"></i>deleted</span><span><i style="background:#1f3f6b"></i>moved</span><span>⟨/⟩ tap a file to see its changed code</span></div>'
-                 + fn(v) + '</section>')
+                 + f'<div data-fgroup="{E(v.get("title") or v["kind"])}">' + fn(v) + '</div></section>')
 
     mm = mermaid(report["graph"]) if report["graph"].get("nodes") else ""
     b.append('<section id="map"' + ('' if mm else ' class="hidden"') + '><h2>Map of the change</h2>'
@@ -975,7 +978,8 @@ def main():
     for i, p in enumerate(report["phases"], 1):
         files = "".join(fpath(x, known_paths) for x in p.get("files", []))
         b.append(f'<div class="card{" open" if i == 1 else ""}"><div class="card-h"><span class="tw">▶</span><span class="pill phase">{i}</span><div class="title">{E(p["title"])}</div></div>'
-                 f'<div class="card-b"><div class="narr">{E(p["narrative"])}</div><div class="files">{files}</div></div></div>')
+                 f'<div class="card-b"><div class="narr">{E(p["narrative"])}</div>'
+                 f'<div class="files" data-fgroup="{E(p["title"])}">{files}</div></div></div>')
     b.append("</section>")
 
     b.append(f'<section id="findings"><h2>What a human must check <span class="cnt">important first</span></h2>')
@@ -1152,10 +1156,17 @@ def main():
       b.append(f'<h3 class="area" data-area="{area_key}">{area_label} <span class="cnt">· {n} file{"s" if n != 1 else ""}</span></h3>')
       if not n:
           b.append('<div class="empty area-empty">No test file changed.</div>')
+      # The area is the GROUP its rows step through: an open row's ‹ / › reach the files listed under
+      # this heading and no further, so a reader who runs out of arrow knows they have read the area
+      # rather than wondering which list they drifted into.
+      if n: b.append(f'<div class="unrev-area" data-fgroup="{E(area_label)}">')
       for f in by_area[area_key]:
         why = (report.get("unreviewed_notes") or {}).get(f["path"], "")
-        b.append(f'<div class="row fold-row" data-file="{E(f["path"])}"><span class="tw">▶</span><span class="rp"{st_attr(f["path"])}>{E(f["path"])} <span style="color:var(--fg3)">· {E(store[f["path"]]["status"])} · {f["substantive_hunks"]} hunk{"s" if f["substantive_hunks"] != 1 else ""}{(" · " + E(why)) if why else ""}</span></span><button data-file="{E(f["path"])}">⚑</button></div>'
-                 f'<div class="row-body" data-file="{E(f["path"])}"><div class="row-code"></div><div class="row-close"><button class="btn">▲ Collapse {E(os.path.basename(f["path"]))}</button></div></div>')
+        # The row OPENS the file, it does not expand it: one reading surface for every file on the
+        # page means one set of arrows, and the sheet's ‹ N of M › is what tells a reader they are
+        # still inside this area. The ⚑ stays outside the opener so flagging never opens the sheet.
+        b.append(f'<div class="row"><span class="rp" data-open="{E(f["path"])}"{st_attr(f["path"])} title="Show the changes in {E(f["path"])}">⟨/⟩ {E(f["path"])} <span style="color:var(--fg3)">· {E(store[f["path"]]["status"])} · {f["substantive_hunks"]} hunk{"s" if f["substantive_hunks"] != 1 else ""}{(" · " + E(why)) if why else ""}</span></span><button data-file="{E(f["path"])}">⚑</button></div>')
+      if n: b.append('</div>')
     b.append("</div></section>")
 
     # Noise goes LAST. Everything above it is something the reader must act on or account for;
@@ -1196,7 +1207,10 @@ def main():
         store_used += shown
         hunk_store[hid] = chtml + (f'<div class="empty">… {c} more lines not shown (open the file for the rest)</div>' if c else "")
     b.append('<script type="application/json" id="hunk-store">' + json.dumps(hunk_store).replace("</", "<\\/") + '</script>')
-    b.append('<div class="sheet-bg" id="sheet-bg"></div><div class="sheet" id="sheet"><div class="sheet-h"><span class="sheet-t" id="sheet-t"></span><button class="btn" id="sheet-x">✕</button></div><div class="sheet-b" id="sheet-b"></div></div>')
+    b.append('<div class="sheet-bg" id="sheet-bg"></div><div class="sheet" id="sheet"><div class="sheet-h">'
+             '<span class="sheet-t" id="sheet-t"></span>'
+             '<span class="sheet-nav" id="sheet-nav" hidden><button class="btn" id="sheet-prev" aria-label="Previous file in this group">‹</button><span class="sheet-pos" id="sheet-pos"></span><button class="btn" id="sheet-next" aria-label="Next file in this group">›</button></span>'
+             '<button class="btn" id="sheet-x">✕</button></div><div class="sheet-b" id="sheet-b"></div></div>')
 
     # Prior events travel WITH the page. Feedback used to live only in this browser's localStorage,
     # so a re-render read on a second device — or after clearing site data — showed every card

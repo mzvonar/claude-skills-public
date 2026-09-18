@@ -251,7 +251,7 @@ button.fpath:active{border-color:var(--info)}
 .unrev .row .rp{flex:1;word-break:break-all}
 .unrev .row button{font:inherit;font-size:.7rem;padding:.35rem .55rem;border-radius:6px;border:1px solid var(--line2);background:var(--bg2);color:var(--fg2);min-height:34px}
 .unrev .row button.on{border-color:var(--crit);color:var(--crit)}
-.unrev .row.fold-row{cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
+.unrev .row .rp[data-open]{cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
 .unrev h3.area{font-size:.7rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--fg3);margin:1.1rem 0 .2rem}
 .unrev h3.area .cnt{font-weight:400;letter-spacing:0;text-transform:none}
 .unrev .area-empty{padding:.2rem 0 .4rem;font-size:.8rem}
@@ -284,10 +284,6 @@ button.fpath:active{border-color:var(--info)}
 .unrev .row .tw{font-size:.7rem}
 .unrev .row.open .tw{transform:rotate(90deg)}
 .unrev .row .rp{word-break:break-all}
-.unrev .row-body{display:none;padding:.5rem 0 .9rem 1.1rem;border-bottom:1px dashed var(--line)}
-.unrev .row-body>*+*{margin-top:.5rem}
-.unrev .row.open+.row-body{display:block}
-.unrev .row-close{display:flex;justify-content:flex-end;padding-top:.4rem}
 .unrev .row.open{position:sticky;top:0;background:rgba(15,17,23,.96);z-index:4}
 .filter{position:sticky;top:0;z-index:5;background:rgba(15,17,23,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:.6rem 0;margin:-.25rem 0 .75rem;display:flex;gap:.4rem;overflow-x:auto;scrollbar-width:none}
 .filter::-webkit-scrollbar{display:none}
@@ -388,11 +384,35 @@ button.fpath:active{border-color:var(--info)}
 .ad-arrow{text-align:center;color:var(--fg3);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;padding:.5rem 0}
 .ad-uses{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.5rem}
 .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none}
-.sheet{position:fixed;left:0;right:0;bottom:0;max-height:88vh;background:var(--bg);border-top:1px solid var(--line2);border-radius:14px 14px 0 0;z-index:51;display:none;flex-direction:column}
+/* The sheet's height follows the diff it holds, so whichever edge it is NOT anchored to moves on
+   every step between files — and the controls must never be the edge that moves.
+   Phone: a bottom sheet, as the idiom wants, with the controls at the BOTTOM (`column-reverse`, so
+   the DOM keeps title-then-body) — they land on the fixed screen edge, under the thumb.
+   Desktop: anchored at the top, controls at the top. Either way the arrows stay put. */
+.sheet{position:fixed;left:0;right:0;bottom:0;top:auto;max-height:88vh;background:var(--bg);border-top:1px solid var(--line2);border-radius:14px 14px 0 0;z-index:51;display:none;flex-direction:column-reverse}
 .sheet.show,.sheet-bg.show{display:flex}
-@media(min-width:900px){.sheet{left:50%;right:auto;bottom:3vh;width:860px;max-height:90vh;transform:translateX(-50%);border-radius:14px;border:1px solid var(--line2)}}
-.sheet-h{display:flex;align-items:center;gap:.6rem;padding:.7rem 1rem;border-bottom:1px solid var(--line)}
-.sheet-t{flex:1;font-family:var(--mono);font-size:.8rem;color:var(--fg);word-break:break-all}
+@media(min-width:900px){.sheet{left:50%;right:auto;top:4vh;bottom:auto;width:860px;max-height:90vh;transform:translateX(-50%);flex-direction:column;border:1px solid var(--line2);border-radius:14px}
+.sheet-h{padding:.7rem 1rem;border-top:none;border-bottom:1px solid var(--line)}}
+.sheet-h{display:flex;align-items:center;gap:.6rem;padding:.7rem 1rem calc(.7rem + env(safe-area-inset-bottom));border-top:1px solid var(--line)}
+/* ONE line, always, and the FILENAME rather than the path. The full path wrapped to four lines on a
+   phone, so the header's height changed with the file and the controls beside it moved even though the
+   sheet's own edge did not. Truncating the path from the left was tried and read worse (`…s.json`,
+   with the status glyph stranded at the right end): the name is what identifies the file, the tooltip
+   carries the whole path, and the diff's own header inside the body prints it in full anyway. */
+.sheet-t{flex:1;min-width:0;font-family:var(--mono);font-size:.8rem;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Group navigation. The arrows step through the files of the ONE group the sheet was opened from — a
+   phase's file list, a view's chips, a DB package's migrations — and stop at its ends rather than
+   wrapping or crossing into the next group. The position label is what makes a stopped arrow
+   legible: a dead control with no "3 of 3" beside it reads as broken, not as the end of the list. */
+.sheet-nav{display:flex;align-items:center;gap:.35rem;flex:none}
+/* `display:flex` above outranks the UA stylesheet's `[hidden]{display:none}`, so without this the
+   nav survives being hidden and shows the last group's "1 of 2" over a file that has no group —
+   arrows that look live and do nothing. Reported on the folded-hunk view, which has no group. */
+.sheet-nav[hidden]{display:none}
+.sheet-nav .btn{padding:.35rem .6rem;min-height:32px;min-width:32px;font-size:1rem;line-height:1}
+.sheet-nav .btn[disabled]{opacity:.32;cursor:default}
+.sheet-pos{font-size:.68rem;color:var(--fg3);white-space:nowrap;max-width:11rem;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:560px){.sheet-pos{max-width:5.5rem}}
 /* `min-height:0` so the body can shrink below its content inside the `max-height`-clamped column —
    without it a long diff pushes the sheet past the viewport instead of scrolling inside it.
    `overscroll-behavior:contain` stops the gesture at the ends: a flick past the last line used to
@@ -556,11 +576,16 @@ __BODY__
   // each time its diff is (re-)built. Assigned by the line-comment block near the end of this file;
   // a no-op until then, so the order of the two blocks cannot break either one.
   let afterCode = () => {};
-  $$('.unrev .row.fold-row').forEach(r => r.addEventListener('click', ev => {
-    if (ev.target.closest('button')) return; r.classList.toggle('open');
-    const body = r.nextElementSibling; const c = body && body.querySelector('.row-code');
-    if (c && !c.dataset.done) { c.innerHTML = codeFor(body.dataset.file); c.dataset.done = '1'; afterCode(c); }
-  }));
+  // A GROUP is the block a file reference was read inside: a phase's file list, a view's chips, a DB
+  // package's migrations, one area of "Everything else". One definition, because two would drift and
+  // the whole point of the arrows is that they cannot leave the block the reader is in.
+  const groupOf = el => el && el.closest ? el.closest('[data-fgroup]') : null;
+  const filesOfGroup = g => {
+    if (!g) return null;
+    const all = [...g.querySelectorAll('[data-open]')].map(b => b.dataset.open);
+    const files = all.filter((f, i) => f && all.indexOf(f) === i);
+    return files.length > 1 ? { label: g.dataset.fgroup || '', files } : null;
+  };
   const sheet = $('#sheet'), sheetBg = $('#sheet-bg');
   // Freeze the page behind the sheet. `overscroll-behavior` alone is not enough: a diff SHORTER than
   // the sheet has no inner scroll to contain, so the gesture goes straight to the document and the
@@ -570,20 +595,83 @@ __BODY__
   // comes back to the line they opened the file from rather than to the top.
   let lockedY = 0;
   const lockPage = () => {
+    // Idempotent on purpose. Stepping to the next file re-shows the sheet, and a second lock would
+    // read `scrollY` as 0 — the document is already fixed and therefore unscrolled — so the page
+    // behind would snap to the top and closing would return the reader there instead of to the line
+    // they opened the file from.
+    if (document.body.style.position === 'fixed') return;
     lockedY = window.scrollY;
+    // Reserve the scrollbar's width where the platform has a classic one: fixing the body takes the
+    // scrollbar away, the content gets those pixels back, long paths re-wrap and the restored offset
+    // lands somewhere else. A no-op under overlay scrollbars, where the gutter measures 0.
+    const gutter = window.innerWidth - document.documentElement.clientWidth;
     const s = document.body.style;
     s.position = 'fixed'; s.top = -lockedY + 'px'; s.left = '0'; s.right = '0'; s.width = '100%';
+    if (gutter > 0) s.paddingRight = gutter + 'px';
   };
   const unlockPage = () => {
     const s = document.body.style;
     if (s.position !== 'fixed') return;
-    s.position = ''; s.top = ''; s.left = ''; s.right = ''; s.width = '';
+    s.position = ''; s.top = ''; s.left = ''; s.right = ''; s.width = ''; s.paddingRight = '';
+    // Force the document to regain its height BEFORE restoring the offset: while the body is fixed the
+    // page has no scrollable height, and a `scrollTo` issued in the same task is clamped to that
+    // collapsed maximum. Reading `scrollHeight` flushes the layout, which is enough — a deferred
+    // re-assert on the next frame was tried and had to go: it fought a reader who scrolled straight
+    // after closing, yanking them back to where the sheet had been opened.
+    void document.documentElement.scrollHeight;
     window.scrollTo(0, lockedY);
   };
   const showSheet = () => { sheet.classList.add('show'); sheetBg.classList.add('show'); lockPage(); };
   // The sheet title carries the file's status like every other reference (colour + glyph).
   const statusOf = s => !s ? '' : /moved from|←/.test(s) ? 'moved' : (s.split(' ')[0] || '');
-  const openSheet = f => { const t = $('#sheet-t'); t.textContent = f + (STORE[f] ? ' · ' + STORE[f].status : ''); const st = statusOf(STORE[f] && STORE[f].status); if (st) t.dataset.st = st; else delete t.dataset.st; $('#sheet-b').innerHTML = codeFor(f); afterCode($('#sheet-b')); showSheet(); };
+  // Shown: the file's name and its status. Hovered: the whole path.
+  const baseOf = p => (p || '').split('/').pop() || p;
+  const setTitle = (el, path, suffix) => { el.textContent = baseOf(path) + suffix; el.title = path + suffix; };
+  // Which files the header's ‹ / › walk, and where in them the sheet is. Null for a file opened from
+  // no group (a comment locator, a lone chip) and for a folded-hunk view, where the nav hides rather
+  // than offering arrows over a list the reader never opened.
+  let NAV = null;
+  const renderNav = () => {
+    const nav = $('#sheet-nav');
+    if (!nav) return;
+    if (!NAV) { nav.hidden = true; $('#sheet-pos').textContent = ''; return; }
+    nav.hidden = false;
+    $('#sheet-pos').textContent = (NAV.at + 1) + ' of ' + NAV.files.length + (NAV.label ? ' · ' + NAV.label : '');
+    const prev = $('#sheet-prev'), next = $('#sheet-next');
+    prev.disabled = NAV.at === 0;
+    next.disabled = NAV.at === NAV.files.length - 1;
+    // A disabled arrow says which end it is: the reader asked for this so they can tell "the group
+    // ends here" from "the button is broken".
+    prev.title = prev.disabled ? 'First file in ' + (NAV.label || 'this group') : NAV.files[NAV.at - 1];
+    next.title = next.disabled ? 'Last file in ' + (NAV.label || 'this group') : NAV.files[NAV.at + 1];
+  };
+  const showFile = f => {
+    const t = $('#sheet-t');
+    setTitle(t, f, STORE[f] ? ' · ' + STORE[f].status : '');
+    const st = statusOf(STORE[f] && STORE[f].status);
+    if (st) t.dataset.st = st; else delete t.dataset.st;
+    const body = $('#sheet-b');
+    body.innerHTML = codeFor(f);
+    afterCode(body);
+    renderNav();
+    showSheet();
+    body.scrollTop = 0;
+  };
+  const openSheet = (f, origin) => {
+    const g = filesOfGroup(groupOf(origin));
+    const at = g ? g.files.indexOf(f) : -1;
+    NAV = g && at >= 0 ? { label: g.label, files: g.files, at } : null;
+    showFile(f);
+  };
+  // Never wraps and never crosses into the neighbouring group: the step is clamped, so the arrow at
+  // an end is inert rather than quietly moving the reader somewhere else.
+  const stepSheet = by => {
+    if (!NAV) return;
+    const at = NAV.at + by;
+    if (at < 0 || at >= NAV.files.length) return;
+    NAV.at = at;
+    showFile(NAV.files[at]);
+  };
   const closeSheet = () => { sheet.classList.remove('show'); sheetBg.classList.remove('show'); unlockPage(); };
   // Delegated on [data-open], not on a class: every file reference anywhere in the report — view
   // chips, phase paths, the uncommitted list — opens that file's changes, and anything added later
@@ -591,10 +679,12 @@ __BODY__
   let HUNKS = {}; try { HUNKS = JSON.parse(document.getElementById('hunk-store').textContent); } catch(e) {}
   const openHunks = (ids, label) => {
     const html = ids.split(',').map(id => HUNKS[id] || '').join('');
-    $('#sheet-t').textContent = label + ' · folded change'; delete $('#sheet-t').dataset.st;
+    setTitle($('#sheet-t'), label, ' · folded change'); delete $('#sheet-t').dataset.st;
+    NAV = null; renderNav();
     $('#sheet-b').innerHTML = html || '<div class="empty">this hunk was not captured</div>';
     afterCode($('#sheet-b'));
     showSheet();
+    $('#sheet-b').scrollTop = 0;
   };
   document.addEventListener('click', ev => {
     // Folded hunks win over the whole-file view: inside a fold card the reader asked about THAT
@@ -602,7 +692,7 @@ __BODY__
     const fh = ev.target.closest('[data-open-hunks]');
     if (fh) { ev.preventDefault(); ev.stopPropagation(); openHunks(fh.dataset.openHunks, fh.dataset.openLabel || ''); return; }
     const c = ev.target.closest('[data-open]');
-    if (c) { ev.preventDefault(); ev.stopPropagation(); openSheet(c.dataset.open); }
+    if (c) { ev.preventDefault(); ev.stopPropagation(); openSheet(c.dataset.open, c); }
   });
 
   // ---- How to check: verified ticks + "didn't work" notes ------------------------------------
@@ -725,8 +815,17 @@ __BODY__
       };
     });
   }
-  $('#sheet-x').onclick = closeSheet; sheetBg.onclick = closeSheet; document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeSheet(); });
-  $$('.unrev .row-close button').forEach(b => b.onclick = () => { const row = b.closest('.row-body').previousElementSibling; row.classList.remove('open'); row.scrollIntoView({block: 'center'}); });
+  $('#sheet-x').onclick = closeSheet; sheetBg.onclick = closeSheet;
+  $('#sheet-prev').onclick = () => stepSheet(-1); $('#sheet-next').onclick = () => stepSheet(1);
+  document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape') { closeSheet(); return; }
+    // Arrows only while the sheet is open, and never while someone is typing in it or holding a
+    // modifier — a comment box in the sheet must keep its own cursor keys.
+    if (!sheet.classList.contains('show') || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    if (ev.target.closest('input,textarea,[contenteditable]')) return;
+    if (ev.key === 'ArrowLeft') { ev.preventDefault(); stepSheet(-1); }
+    if (ev.key === 'ArrowRight') { ev.preventDefault(); stepSheet(1); }
+  });
   // Gut flags — scoped to `button[data-file]`, the ⚑ controls. `.unrev button` also matched the
   // row's "▲ Collapse …" button, and because this loop runs AFTER the collapse wiring it replaced
   // that handler outright: pressing Collapse silently raised a gut flag and never collapsed.

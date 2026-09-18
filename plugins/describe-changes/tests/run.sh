@@ -351,7 +351,11 @@ sts = set(re.findall(r'data-st="([^"]+)"', h)); bad = sts - {"added", "modified"
 assert not bad, bad
 assert {"added", "modified"} <= sts, sts
 assert re.search(r'class="fpath" data-open="src/util/text\.ts" data-st="', h), "phase path without a status"
-assert re.search(r'class="rp" data-st="', h), "Everything else row without a status"
+# Order-insensitive: the row gained `data-open` between the class and the status, and what this row
+# checks is that the reference CARRIES a status, not where the attribute sits.
+assert re.search(r'class="rp"[^>]*\bdata-st="(added|modified|deleted|moved)"', h), "Everything else row without a status"
+# And it opens the file in the sheet like every other reference — the row stopped expanding inline.
+assert re.search(r'class="rp" data-open="[^"]+"', h), "Everything else row does not open its file"
 # `big-a.ts` is new on disk but a split target, so `added` or `moved` are both right; what must never
 # happen is the `/dev/null` old path of a new file reading as a move — every new file in the fixture
 # is a split target, so the closed value set above plus this row is the guard.
@@ -445,7 +449,19 @@ print("FAIL, dead controls:", missing) if missing else print("all data-open path
 sys.exit(1 if missing else 0)
 PY
 grep -q 'Renamed files' "$OUT/index.html" || fail "fold card missing"
-grep -q 'row fold-row' "$OUT/index.html" && grep -A3 'row fold-row' "$OUT/index.html" | grep -q 'row-body' || fail "everything-else rows not expandable"
+# Group navigation (1.23.0). A file opened from a block — a phase's list, a view's chips, a DB
+# package's migrations, one "Everything else" area — steps through THAT block and stops at its ends.
+# The rows no longer expand inline: one reading surface for the whole page means one set of arrows.
+grep -q 'id="sheet-nav"' "$OUT/index.html" || fail "sheet group navigation missing"
+grep -q 'class="files" data-fgroup=' "$OUT/index.html" || fail "phase file list is not a group"
+grep -q 'class="unrev-area" data-fgroup=' "$OUT/index.html" || fail "everything-else area is not a group"
+grep -q 'class="row-body"' "$OUT/index.html" && fail "everything-else rows still expand inline"
+grep -q 'sheet-nav\[hidden\]{display:none}' "$OUT/index.html" || fail "hidden nav would keep the last group's position"
+# The controls must not move as the reader steps: the sheet hangs from the top on a wide screen and
+# from the bottom on a phone, where `column-reverse` puts them on the fixed screen edge, and the title
+# is one line so the header's own height never changes.
+grep -q 'flex-direction:column-reverse' "$OUT/index.html" || fail "phone sheet does not put its controls on the fixed edge"
+grep -q "document.body.style.position === 'fixed') return" "$OUT/index.html" || fail "page lock is not idempotent — stepping would forget the reader's place"
 
 # "Everything else" is grouped into FOUR buckets, code FIRST, so the reader can skim code and skip
 # the rest. Tests render even when EMPTY — "did they test it?" is the question this list gets asked
