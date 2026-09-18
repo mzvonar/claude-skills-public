@@ -1457,6 +1457,8 @@ PI
 
 # The DB schema package + the four-bucket remainder have a fixture suite of their own.
 bash "$HERE/db-package.sh" || fail "db-package suite"
+# What a report COVERS: working tree in by default, opting out explicit, base from the remote.
+bash "$HERE/scope.sh" || fail "scope suite"
 # The render-time syntax lexer: round trip, state across lines, escaping, graceful fallback.
 bash "$HERE/highlight.sh" || fail "highlight suite"
 

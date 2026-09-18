@@ -1,6 +1,6 @@
 ---
 name: describe-changes
-version: "1.24.0"
+version: "1.25.0"
 description: >
   Present an implemented change to a human reviewer the way a human needs it: what was done and why,
   a visual map of the high-level change (who calls whom, where data flows, what moved/split/renamed),
@@ -55,8 +55,19 @@ OUT=$(bash "$S/collect-diff.sh" [git diff args…] | tail -1 | sed 's/^OUT=//')
 **Scope = everything the human would sign for:** on a feature branch that is every commit since
 `merge-base(<base>)` **plus** staged, unstaged and untracked changes (the working tree is the truth,
 not HEAD); `--committed-only` limits it to HEAD; on the default branch it is the working tree vs
-HEAD. `meta.json` records `commits`, `uncommitted_files` and a tree `fingerprint`. Say in chat how
-much of the change is uncommitted — the reviewer must know a signature on HEAD would not cover it.
+HEAD. `meta.json` records `commits`, `uncommitted_files`, `excluded_uncommitted` and a tree
+`fingerprint`. Say in chat how much of the change is uncommitted — the reviewer must know a
+signature on HEAD would not cover it.
+
+**Choose a base with `--base <ref>`, never by passing a range as a positional argument.** A range is
+a different mode: it describes COMMITS and leaves the working tree out. That is a legitimate thing
+to want and a disastrous thing to get by accident — the report then shows code that is not what is
+on disk, so nothing in it can be checked against the disk. `collect-diff.sh` therefore **exits 4**
+if you name a range while the tree is dirty, and tells you the three ways forward; `--committed-only`
+is how you say you meant it, and what it left out lands in `excluded_uncommitted` rather than
+vanishing. The merge-base comes from the remote-tracking ref (`origin/<base>`) when one exists,
+because a local default branch you never check out goes stale silently and takes the report's whole
+scope with it.
 
 Produces `$OUT/{raw.diff,numstat.txt,commits.txt,meta.json,diff-model.json,substantive.diff,conventions.txt}`.
 Exit 2 = nothing to describe; stop and say so. Add `.describe-changes/` to the repo's `.gitignore`

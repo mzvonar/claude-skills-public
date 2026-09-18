@@ -12,7 +12,14 @@
 #                               branch PLUS staged, unstaged and untracked changes (--committed-only
 #                               stops at HEAD)
 #   - on the default branch:    working tree vs HEAD (staged + unstaged + untracked)
-#   <base> defaults to the repo's default branch (origin/HEAD → main → master).
+#   <base> defaults to the repo's default branch (origin/HEAD → main → master), and the merge-base
+#   is taken from its REMOTE-TRACKING ref (origin/<base>) when one exists — a local default branch
+#   goes stale silently and takes the whole report with it.
+#
+# INCLUDING THE WORKING TREE IS THE DEFAULT AND LEAVING IT OUT IS AN EXPLICIT ACT. Passing a git
+# range while the tree is dirty exits 4 rather than quietly describing HEAD; say --committed-only if
+# that is what you want. A report that shows code other than what is on disk cannot be checked
+# against the disk, which is the one thing its reader can do.
 #   meta.json records commits, uncommitted files and a fingerprint of the tree so a later --check
 #   can tell whether the report still describes what is on disk.
 #
@@ -77,17 +84,73 @@ default_branch() {
 }
 [ -n "$BASE" ] || BASE="$(default_branch)"
 
+# The ref the merge-base is actually taken from. A LOCAL default branch is only as fresh as the last
+# `git pull` on it, and nothing in a worktree-heavy workflow keeps it current: measured on a real
+# repo, local `main` sat 144 commits behind `origin/main`, so the default base dragged 113 unrelated
+# commits and 234 files into a 13-file report. The remote-tracking ref is also the honest base —
+# it is what the change will merge into. `BASE` keeps the plain name for the label and for the
+# am-I-on-the-default-branch test, so mode selection is unchanged.
+base_ref() {
+  case "$BASE" in
+    */*) echo "$BASE"; return ;;                       # already qualified (origin/main, upstream/x)
+  esac
+  if git rev-parse -q --verify "refs/remotes/origin/$BASE" >/dev/null; then
+    echo "origin/$BASE"
+  else
+    echo "$BASE"
+  fi
+}
+BASE_REF="$(base_ref)"
+
 MODE=""; LABEL=""; BASE_SHA=""
 COMMON_FLAGS=(-M50% -C50% --no-color --no-ext-diff --unified=3)
 
+DIRTY="$( { git status --porcelain=v1 --untracked-files=all 2>/dev/null || true; } | grep -v ' \.describe-changes/' | grep -v '^?? \.describe-changes/' || true)"
+DIRTY_N="$(printf '%s' "$DIRTY" | grep -c . || true)"
+
 if [ "${#ARGS[@]}" -gt 0 ]; then
+  # An explicit range describes COMMITS. Excluding the working tree is a legitimate thing to want and
+  # a catastrophic thing to get by accident: the report then shows code that is not what is on disk,
+  # and every claim the author makes about "the fix" is unfalsifiable against the diff beside it.
+  # So it must be ASKED for. (Observed: a report whose findings said a comment had been corrected
+  # while the diff under them still showed the stale one, because the range silently stopped at HEAD.)
+  # The loss only happens when the range ENDS AT HEAD: `A..HEAD` says "everything up to now" and
+  # then silently stops at the last commit. Every other shape is safe or deliberate —
+  # `git diff <ref>` already includes the tree, `--staged` describes the index on purpose, a path
+  # filter still diffs the tree, and a range between two frozen refs (what the delta pages build)
+  # cannot contain a working tree at all. Refusing those would fire the rule on correct usage, which
+  # is worse than not having it: the delta builder is an internal caller and it broke first.
+  NAMES_HEAD=0
+  for a in "${ARGS[@]}"; do
+    case "$a" in
+      --) break ;;
+      -*) continue ;;
+    esac
+    for side in ${a//.../ } ; do
+      [ -n "$side" ] || continue
+      s="$(git rev-parse -q --verify "${side}^{commit}" 2>/dev/null || true)"
+      [ -n "$s" ] && [ "$s" = "$HEAD_SHA" ] && NAMES_HEAD=1
+    done
+  done
+  if [ "$NAMES_HEAD" = 1 ] && [ "$COMMITTED_ONLY" != 1 ] && [ "${DIRTY_N:-0}" -gt 0 ]; then
+    {
+      echo "ERROR: an explicit range ('${ARGS[*]}') describes commits only, but $DIRTY_N file(s) are uncommitted:"
+      printf '%s\n' "$DIRTY" | sed 's/^/  /' | head -20
+      echo
+      echo "Excluding them has to be deliberate. Pick one:"
+      echo "  • describe everything a signature would cover:  collect-diff.sh --base <ref>"
+      echo "  • describe the commits only, on purpose:        collect-diff.sh --committed-only ${ARGS[*]}"
+      echo "  • commit the work first, then re-run."
+    } >&2
+    exit 4
+  fi
   MODE="explicit"; LABEL="git diff ${ARGS[*]}"
   RAW="$(git diff "${COMMON_FLAGS[@]}" "${ARGS[@]}")"
   NUMSTAT="$(git diff --numstat -M50% "${ARGS[@]}")"
   COMMITS=""
-elif [ "$BRANCH" != "$BASE" ] && [ "$BRANCH" != "detached" ] && git rev-parse -q --verify "$BASE" >/dev/null; then
+elif [ "$BRANCH" != "$BASE" ] && [ "$BRANCH" != "detached" ] && git rev-parse -q --verify "$BASE_REF" >/dev/null; then
   MODE="branch"
-  BASE_SHA="$(git merge-base "$BASE" HEAD)"
+  BASE_SHA="$(git merge-base "$BASE_REF" HEAD)"
   if [ "$COMMITTED_ONLY" = 1 ]; then
     LABEL="$BASE..$BRANCH (committed only)"
     RAW="$(git diff "${COMMON_FLAGS[@]}" "$BASE_SHA" HEAD)"
@@ -129,19 +192,26 @@ printf '%s\n' "$RAW" > "$OUT/raw.diff"
 printf '%s\n' "$NUMSTAT" | sed '/^$/d' > "$OUT/numstat.txt"
 printf '%s\n' "$COMMITS" | sed '/^$/d' > "$OUT/commits.txt"
 
-UNCOMMITTED="$( { git status --porcelain=v1 --untracked-files=all 2>/dev/null || true; } | grep -v ' \.describe-changes/' || true)"
-[ "$COMMITTED_ONLY" = 1 ] && UNCOMMITTED=""
+# `uncommitted_files` = dirty files the report INCLUDES. `excluded_uncommitted` = dirty files it
+# deliberately leaves out, which only a committed-only or explicit run has. They are separate keys
+# because blanking the list (what this did before) makes a report that excluded work
+# indistinguishable from one taken on a clean tree — the reader cannot tell that anything is missing.
+INCLUDED="$DIRTY"; EXCLUDED=""
+if [ "$COMMITTED_ONLY" = 1 ] || [ "$MODE" = "explicit" ]; then INCLUDED=""; EXCLUDED="$DIRTY"; fi
 FP="$(fingerprint)"
-UNCOMMITTED="$UNCOMMITTED" python3 - "$OUT/meta.json" "$ROOT" "$BRANCH" "$BASE" "$BASE_SHA" "$HEAD_SHA" "$MODE" "$LABEL" "$FP" "$COMMITTED_ONLY" <<'PY'
+UNCOMMITTED="$INCLUDED" EXCLUDED="$EXCLUDED" python3 - "$OUT/meta.json" "$ROOT" "$BRANCH" "$BASE" "$BASE_SHA" "$HEAD_SHA" "$MODE" "$LABEL" "$FP" "$COMMITTED_ONLY" <<'PY'
 import json, sys, datetime, os
 p, root, branch, base, base_sha, head, mode, label, fp, committed_only = sys.argv[1:]
-unc = [l for l in os.environ.get("UNCOMMITTED", "").splitlines() if l.strip()]
+def rows(env):
+    return [{"status": l[:2].strip() or "??", "path": l[3:].split(" -> ")[-1]}
+            for l in os.environ.get(env, "").splitlines() if l.strip()]
 commits = [l for l in open(os.path.join(os.path.dirname(p), "commits.txt")).read().splitlines() if l.strip()]
 json.dump({
   "repo": root.rstrip("/").split("/")[-1], "root": root, "branch": branch, "base": base,
   "base_sha": base_sha, "head_sha": head, "mode": mode, "range_label": label,
   "commits": len(commits), "committed_only": committed_only == "1",
-  "uncommitted_files": [{"status": l[:2].strip() or "??", "path": l[3:].split(" -> ")[-1]} for l in unc],
+  "uncommitted_files": rows("UNCOMMITTED"),
+  "excluded_uncommitted": rows("EXCLUDED"),
   "fingerprint": fp,
   "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
 }, open(p, "w"), indent=2)
