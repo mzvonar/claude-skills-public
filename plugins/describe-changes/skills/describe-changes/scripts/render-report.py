@@ -555,11 +555,16 @@ def delta_section(before, dl, has_page=False, pages=()):
                     f'{sa.get("noise_pct","?")}% folded</li></ul></div>')
     if dl["summary_changed"]:
         rows.append('<div class="dl-g"><b>The summary was rewritten</b><ul><li>read the header again</li></ul></div>')
-    if not rows:
+    if not rows and not pages:
         return ""
+    if not rows:
+        # The cards are identical and the code is not. Say exactly that — claiming more would be
+        # guessing, and the page below is what settles it.
+        rows.append('<div class="dl-g"><b>No finding or check moved</b><ul><li>the report reads the '
+                    'same as it did then; open the page below to see whether the code did</li></ul></div>')
     head = delta_head(before, dl)
     link = ""
-    if has_page:
+    if has_page and pages:
         # One row per reading, oldest first: the oldest page is the whole arc since the first
         # description, the newest is "since you last read this". Naming the span on each row is what
         # lets a reader who has been away twice pick the right one without opening both.
