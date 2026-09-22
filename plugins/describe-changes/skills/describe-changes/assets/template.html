@@ -1090,10 +1090,14 @@ __BODY__
   };
   fb.filter(e => e.type === 'comment' && e.id).forEach(renderThread);
 
-  // The how-to-comment line: scaffolding for a first read, clutter once you know the page. The
-  // dismissal is remembered per report, like every other reader-set preference here.
+  // The how-to-comment line: scaffolding for a first read, clutter once you know the page. Its
+  // dismissal is the ONE preference here that is NOT keyed per report, and deliberately so — what it
+  // teaches is how this page takes input, which a reader learns once and then knows for every report
+  // they ever open. Keyed per report it re-teaches someone who already knows, which is what the ✕
+  // said they did. (Still per browser ORIGIN, so a report served on a different port is a different
+  // reader as far as the browser is concerned; nothing here can reach across that.)
   (() => {
-    const el = $('#howto'), k = 'dc-howto:' + (R.report_id || 'x');
+    const el = $('#howto'), k = 'dc-howto';
     if (!el) return;
     try { if (localStorage.getItem(k) === '1') el.classList.add('hidden'); } catch (e) {}
     $('#howto-x').onclick = () => { el.classList.add('hidden'); try { localStorage.setItem(k, '1'); } catch (e) {} };
