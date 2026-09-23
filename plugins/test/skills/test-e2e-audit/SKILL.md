@@ -49,10 +49,14 @@ benchmark taken with the wrong command is worthless.
      exists, leave it unset here; Phase 3 creates one from the baseline's triaged
      failures and writes the path back.
    - `docsDir` — where audit + benchmark docs land (default `docs`).
-   - `notes` — free-text repo facts the audit must respect, harvested from
+   - `notes` — one-paragraph repo facts the audit must respect, harvested from
      CLAUDE.md / testing docs: machine-wide run locks or shared test DBs, suites CI
      never runs, label-gated suites, seeding/identity constraints, worker-count env
      vars, any "never do X while testing" rules.
+   - `notesFile` — optional path to a markdown file of richer project specifics
+     (see "Project notes file" below). When the harvested facts outgrow one
+     paragraph, offer to create it during setup and move `notes` content there;
+     `notes` then keeps only the one-line pointers that must never be missed.
 2. **Confirm with the user** before writing: show the discovered block and ask them
    to correct anything ambiguous — especially `fullSuiteCommand` when several
    candidates exist; never pick between plausible arbiters silently.
@@ -68,6 +72,7 @@ benchmark taken with the wrong command is worthless.
     "flakeLedger": "docs/known-flakes.md",
     "docsDir": "docs",
     "noiseFloorPct": 8,
+    "notesFile": "docs/test-audit-notes.md",
     "notes": "e2e runs take a machine-wide lock (scripts/*lock*); banking suite is manual-only; realtime suite runs only on labeled PRs"
   }
 }
@@ -77,6 +82,19 @@ benchmark taken with the wrong command is worthless.
    `noiseFloorPct` back into the config. On later runs, read the config first; if a
    configured command fails or no longer exists, re-run discovery for that key and
    update the file, telling the user what changed.
+
+### Project notes file
+
+When `notesFile` is set, **read it in full at the start of every run, before any
+command is executed** — it ranks with this skill's own rules for the repo it
+lives in. It is plain markdown, owned by the repo (committed, reviewable), and
+both audit skills may point at the same file. Suggested sections: **Commands**
+(why the arbiter is what it is, which script is a trap), **Constraints** (locks,
+shared boxes, "never run X while Y"), **Suite map** (which suites exist, which
+CI runs, which are manual-only), **Known quirks** (env pinning, worktree
+gotchas), **History** (past audits and their docs). During an audit, when a
+discovered fact contradicts the file, tell the user and update the file — it is
+the durable memory the next audit starts from.
 
 ## Non-negotiables
 

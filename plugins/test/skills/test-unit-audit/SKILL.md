@@ -66,10 +66,14 @@ benchmark taken with the wrong command is worthless.
      `<fullSuiteCommand> --coverage`); confirm the provider is installed rather
      than assuming — a missing `@vitest/coverage-v8` fails only at run time.
    - `docsDir` — where audit + benchmark docs land (default `docs`).
-   - `notes` — free-text repo facts the audit must respect, harvested from
+   - `notes` — one-paragraph repo facts the audit must respect, harvested from
      CLAUDE.md / testing docs: machine-wide run locks shared with other suites,
      env files the tests need, worker-count env vars, projects CI runs
      separately, any "never do X while testing" rules.
+   - `notesFile` — optional path to a markdown file of richer project specifics
+     (see "Project notes file" below). When the harvested facts outgrow one
+     paragraph, offer to create it during setup and move `notes` content there;
+     `notes` then keeps only the one-line pointers that must never be missed.
 2. **Confirm with the user** before writing: show the discovered block and ask
    them to correct anything ambiguous — especially when several plausible
    full-suite commands exist; never pick between plausible arbiters silently.
@@ -86,6 +90,7 @@ benchmark taken with the wrong command is worthless.
     "coverageCommand": "pnpm vitest run --project unit --coverage",
     "docsDir": "docs",
     "noiseFloorPct": 10,
+    "notesFile": "docs/test-audit-notes.md",
     "notes": "bare `pnpm test` also runs the integration project (real DB); e2e suite takes a machine-wide lock — don't benchmark while it runs"
   }
 }
@@ -95,6 +100,19 @@ benchmark taken with the wrong command is worthless.
    `noiseFloorPct` back into the config. On later runs, read the config first;
    if a configured command fails or no longer exists, re-run discovery for that
    key and update the file, telling the user what changed.
+
+### Project notes file
+
+When `notesFile` is set, **read it in full at the start of every run, before any
+command is executed** — it ranks with this skill's own rules for the repo it
+lives in. It is plain markdown, owned by the repo (committed, reviewable), and
+both audit skills may point at the same file. Suggested sections: **Commands**
+(why the arbiter is what it is, which script is a trap), **Constraints** (locks,
+shared boxes, "never run X while Y"), **Suite map** (which suites/projects
+exist, which CI runs, which are manual-only), **Known quirks** (env pinning,
+worktree gotchas), **History** (past audits and their docs). During an audit,
+when a discovered fact contradicts the file, tell the user and update the file —
+it is the durable memory the next audit starts from.
 
 ## Non-negotiables
 
