@@ -236,7 +236,10 @@ button.fpath:active{border-color:var(--info)}
    probed in Chromium and selected nothing, because setPointerCapture suppresses the selection
    default there. That is an engine side-effect, not a guarantee, and the map is a drag surface
    where selecting a label is never the intent -- so the property states it outright. */
-.map{position:relative;background:#0b0e14;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;height:clamp(220px,58vh,520px);touch-action:none;cursor:grab;-webkit-user-select:none;user-select:none}
+/* Kept in step with MIN_H/MAX_H in initMap, which writes an INLINE height once an SVG exists and
+   therefore wins over this rule. This clamp is what the box gets before that runs, so a mismatch
+   shows as the canvas resizing on load. */
+.map{position:relative;background:#0b0e14;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;height:clamp(480px,72vh,900px);touch-action:none;cursor:grab;-webkit-user-select:none;user-select:none}
 .map:focus-visible{outline:2px solid var(--info);outline-offset:2px}
 .map.grabbing{cursor:grabbing}
 .map.static{height:auto;padding:.5rem;overflow:auto;cursor:default;touch-action:auto}
@@ -900,7 +903,17 @@ __BODY__
     // The canvas height follows the graph instead of being a fixed slab. Most maps are wide and
     // shallow -- this one is 2069x384 -- and a fixed 520px box left two thirds of it empty while
     // the graph sat at 41%. A deep graph still gets a bounded viewport to pan inside.
-    const MIN_H = 220, MAX_H = 520;   // keep in step with the clamp() floor/ceiling on .map
+    // The FLOOR is what a wide, shallow graph gets, because scaling one to the width leaves a
+    // natural height well under it -- a 17-node map measured 220px exactly, the old floor. That box
+    // is too short to explore in: zooming in to read a label leaves a thin strip to pan around.
+    // The floor buys viewport for the zoom, not a bigger first paint -- `fit` below stays bound by
+    // `bw / natW` while the graph is wide, so the initial render is the same size in a taller box.
+    //
+    // A shallow graph therefore letterboxes, deliberately: the empty band is the room the reader
+    // pans into once zoomed, and it is worth more than a snug box. Raise the floor, not the
+    // ceiling, when a map still feels cramped -- the ceiling only ever binds on a DEEP graph, which
+    // is height-bound already and needs no help.
+    const MIN_H = 480, MAX_H = 900;   // keep in step with the clamp() floor/ceiling on .map
     let lastW = 0;
     const fitNow = () => {
       const bw = box.clientWidth;
@@ -928,6 +941,26 @@ __BODY__
       tx = cx - (cx - tx) * (nk / k); ty = cy - (cy - ty) * (nk / k); k = nk; clamp(); draw();
     };
     const atCentre = f => zoomAt(f, box.clientWidth / 2, box.clientHeight / 2);
+    /*
+     * Zoom to where the LABELS are readable, which is the level a reader actually wants and is not
+     * the same as Fit: fitting a wide graph to the box routinely lands near 40%, where the node
+     * text is too small to read and every reader's next action is to zoom anyway.
+     *
+     * The target is a rendered TEXT SIZE, not a percentage. Measuring the label's own font instead
+     * of hard-coding the ~70% it currently works out to keeps it correct if mermaid's default (16px
+     * today, giving 11/16) ever moves, or if a theme sets its own size -- a fixed 0.7 would then
+     * silently mean something else. `getComputedStyle` is read AFTER mermaid has rendered, so this
+     * is the real size on the page rather than a guess at the stylesheet.
+     *
+     * Never zooms OUT: `fit` is the floor, so a graph small enough to already sit at 100% stays
+     * there rather than shrinking to hit the target from above.
+     */
+    const READABLE_PX = 11;
+    const readableK = () => {
+      const label = svg.querySelector('.nodeLabel, .edgeLabel, text');
+      const px = label ? parseFloat(getComputedStyle(label).fontSize) : NaN;
+      return Math.max(fit, READABLE_PX / (px > 0 ? px : 16));
+    };
     box.addEventListener('wheel', e => {
       e.preventDefault(); const r = box.getBoundingClientRect();
       // deltaY's UNIT is deltaMode's to decide: pixels in Chrome, LINES in Firefox behind a real
@@ -984,10 +1017,14 @@ __BODY__
       else return;
       e.preventDefault();
     });
-    const bi = $('#map-in'), bo = $('#map-out'), bf = $('#map-fit'), bl = $('#map-list');
+    const bi = $('#map-in'), bo = $('#map-out'), bf = $('#map-fit'), bl = $('#map-list'),
+          br = $('#map-read');
     if (bi) bi.onclick = () => atCentre(1.4);
     if (bo) bo.onclick = () => atCentre(1 / 1.4);
     if (bf) bf.onclick = fitNow;
+    // A factor, because zoomAt is relative and anchoring on the box centre is what keeps the middle
+    // of the graph under the reader rather than the top-left corner.
+    if (br) br.onclick = () => atCentre(readableK() / k);
     // The map elides long file paths to keep the boxes apart; the list is where they stay in full.
     if (bl) bl.onclick = () => {
       const l = $('#map-fallback'); if (!l) return;

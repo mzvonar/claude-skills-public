@@ -1015,6 +1015,7 @@ def main():
             '<button class="btn" id="map-out" aria-label="Zoom out">\u2212</button>'
             '<button class="btn" id="map-in" aria-label="Zoom in">+</button>'
             '<button class="btn" id="map-fit">Fit</button>'
+            '<button class="btn" id="map-read" aria-label="Zoom to a readable text size">Read</button>'
             '<button class="btn" id="map-list" aria-expanded="false">List</button>'
             '</div>'
             f'<div class="map-list" id="map-fallback">{map_list(report["graph"])}</div>')
