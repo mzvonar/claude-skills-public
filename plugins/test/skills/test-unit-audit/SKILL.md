@@ -10,9 +10,10 @@ description: >
   asked to "audit the unit tests", "speed up the unit/test suite", "why is
   vitest/jest slow", "find duplicate or broken unit tests", "run a unit test
   audit", or to continue a previous audit's next bucket. For browser e2e suites
-  (Playwright, Cypress) use /test:test-e2e-audit instead. Self-configures on
-  first run in a repo: discovers the sanctioned commands, confirms them with the
-  user, and writes .claude/claude-skills.json. Produces
+  (Playwright, Cypress) use /test:test-e2e-audit instead; for suites against a
+  real database or real services use /test:test-integration-audit instead.
+  Self-configures on first run in a repo: discovers the sanctioned commands,
+  confirms them with the user, and writes .claude/claude-skills.json. Produces
   docs/test-unit-audit-<date>.md plus one docs/test-unit-benchmark-bucket<N>.md
   per implemented bucket.
 ---

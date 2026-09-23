@@ -9,8 +9,9 @@ description: >
   tests", "speed up the e2e suite", "find duplicate or broken e2e tests", "why is
   e2e CI slow", "run an e2e test audit", or to continue a previous audit's next
   bucket. For unit/component suites (Vitest, Jest) use /test:test-unit-audit
-  instead. Self-configures on first run in a repo: discovers the sanctioned
-  full-suite command, flake ledger and repo constraints, confirms them with the
+  instead; for suites against a real database or real services use
+  /test:test-integration-audit instead. Self-configures on first run in a repo:
+  discovers the sanctioned full-suite command, flake ledger and repo constraints, confirms them with the
   user, and writes .claude/claude-skills.json. Produces docs/test-e2e-audit-<date>.md
   plus one docs/test-e2e-benchmark-bucket<N>.md per implemented bucket.
 ---
