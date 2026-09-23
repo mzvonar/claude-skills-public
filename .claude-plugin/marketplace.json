@@ -12,8 +12,8 @@
     {
       "name": "test",
       "source": "./plugins/test",
-      "version": "1.2.1",
-      "description": "Test-suite audit and optimization: batch analysis via subagents, bucketed findings (low-hanging fruit first), machine-local baseline, and measured bucket-by-bucket fixes with a benchmark table.",
+      "version": "2.0.0",
+      "description": "Test-suite audit and optimization, one skill per tier: test-e2e-audit (Playwright/Cypress) and test-unit-audit (Vitest/Jest). Batch analysis via subagents, bucketed findings, machine-local baselines, and measured bucket-by-bucket fixes with benchmark tables.",
       "author": {
         "name": "Martin Zvon\u00e1r"
       },

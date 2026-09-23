@@ -1,19 +1,21 @@
 ---
-name: test-audit
+name: test-e2e-audit
 description: >
-  Audit a test suite for duration and quality in parallel subagent batches, bucket
-  the findings with low-hanging fruit first, measure a machine-local baseline so
-  deltas are attributable, then implement bucket-by-bucket via subagents — each
-  bucket benchmarked and recorded in a markdown table. Use when asked to "audit the
-  tests", "speed up the e2e/test suite", "find duplicate or broken tests", "why is
-  CI slow", "run a test audit", or to continue a previous audit's next bucket.
-  Self-configures on first run in a repo: discovers the sanctioned full-suite
-  command, flake ledger and repo constraints, confirms them with the user, and
-  writes .claude/claude-skills.json. Produces docs/test-audit-<date>.md plus one
-  docs/test-benchmark-bucket<N>.md per implemented bucket.
+  Audit an end-to-end/browser test suite (Playwright, Cypress, or similar) for
+  duration and quality in parallel subagent batches, bucket the findings with
+  low-hanging fruit first, measure a machine-local baseline so deltas are
+  attributable, then implement bucket-by-bucket via subagents — each bucket
+  benchmarked and recorded in a markdown table. Use when asked to "audit the e2e
+  tests", "speed up the e2e suite", "find duplicate or broken e2e tests", "why is
+  e2e CI slow", "run an e2e test audit", or to continue a previous audit's next
+  bucket. For unit/component suites (Vitest, Jest) use /test:test-unit-audit
+  instead. Self-configures on first run in a repo: discovers the sanctioned
+  full-suite command, flake ledger and repo constraints, confirms them with the
+  user, and writes .claude/claude-skills.json. Produces docs/test-e2e-audit-<date>.md
+  plus one docs/test-e2e-benchmark-bucket<N>.md per implemented bucket.
 ---
 
-# Test Audit — batch analysis → buckets → measured fixes
+# E2E Test Audit — batch analysis → buckets → measured fixes
 
 Origin: a real audit of a ~570-test Playwright e2e suite (suite 618s → 396s best,
 62 duplicate tests folded away, 6 worker-serialization caps lifted, ~22
@@ -23,9 +25,10 @@ project's equivalents.
 
 ## Configuration & first-run setup
 
-Config lives in `.claude/claude-skills.json` under a top-level `test-audit` key.
-**On the first invocation in a repo (no `test-audit` key present), run SETUP before
-any auditing** — repo-specific commands are easy to get wrong from name alone, and a
+Config lives in `.claude/claude-skills.json` under a top-level `test-e2e-audit`
+key (a legacy `test-audit` key is read as a fallback — migrate it to the new name
+when touching the file). **On the first invocation in a repo (neither key
+present), run SETUP before any auditing** — repo-specific commands are easy to get wrong from name alone, and a
 benchmark taken with the wrong command is worthless.
 
 ### Setup procedure
@@ -58,7 +61,7 @@ benchmark taken with the wrong command is worthless.
 
 ```json
 {
-  "test-audit": {
+  "test-e2e-audit": {
     "fullSuiteCommand": "pnpm test:e2e:built",
     "listCommand": "pnpm exec playwright test --list --reporter=line",
     "typecheckCommand": "pnpm typecheck",
@@ -155,7 +158,8 @@ e.g. a 5s title probe before the common testid — multiplied by its call count)
 
 ## Phase 2 — Bucket report
 
-Write `<docsDir>/test-audit-<date>.md` with buckets in THIS order:
+Write `<docsDir>/test-e2e-audit-<date>.md` (when continuing an audit started under
+the old skill name, look for `test-audit-<date>.md` too) with buckets in THIS order:
 
 1. **Low-hanging fruit** — S-effort config/helper changes and no-analysis deletions.
 2. **Merges & shared fixtures** — S-effort per item, spread across specs.
@@ -228,7 +232,7 @@ asserts, load-bearing reloads) — so later passes don't "optimize" them away.
   saved) is a result, not a failure: revert it and write the measurement into the
   config comment beside the cap — otherwise the next audit re-flags the cap as
   vestigial and re-runs the experiment.
-- Write `<docsDir>/test-benchmark-bucket<N>.md`: a results table
+- Write `<docsDir>/test-e2e-benchmark-bucket<N>.md`: a results table
   (run | tree | workers | suite | wall | pass/fail/skip | collected), a failure-set
   validity paragraph mapping each failure to its ledger entry, an honest "reading"
   section (attribute the delta or admit noise), what was deferred and why, and a

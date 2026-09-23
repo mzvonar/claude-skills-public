@@ -1,10 +1,23 @@
 {
   "name": "test",
-  "description": "Test-suite audit and optimization: batch analysis via subagents, bucketed findings (low-hanging fruit first), machine-local baseline, and measured bucket-by-bucket fixes with a benchmark table.",
-  "version": "1.2.1",
-  "author": { "name": "Martin Zvonár", "url": "https://github.com/mzvonar" },
+  "description": "Test-suite audit and optimization, one skill per tier: test-e2e-audit (Playwright/Cypress) and test-unit-audit (Vitest/Jest). Batch analysis via subagents, bucketed findings, machine-local baselines, and measured bucket-by-bucket fixes with benchmark tables.",
+  "version": "2.0.0",
+  "author": {
+    "name": "Martin Zvon\u00e1r",
+    "url": "https://github.com/mzvonar"
+  },
   "homepage": "https://github.com/mzvonar/claude-skills-public",
   "repository": "https://github.com/mzvonar/claude-skills-public",
   "license": "MIT",
-  "keywords": ["testing", "e2e", "playwright", "performance", "test-quality", "audit"]
+  "keywords": [
+    "testing",
+    "e2e",
+    "unit",
+    "playwright",
+    "vitest",
+    "jest",
+    "performance",
+    "test-quality",
+    "audit"
+  ]
 }
