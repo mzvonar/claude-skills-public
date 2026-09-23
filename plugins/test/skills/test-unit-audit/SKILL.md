@@ -66,6 +66,17 @@ benchmark taken with the wrong command is worthless.
      `<fullSuiteCommand> --coverage`); confirm the provider is installed rather
      than assuming — a missing `@vitest/coverage-v8` fails only at run time.
    - `docsDir` — where audit + benchmark docs land (default `docs`).
+   - `auditModel` — optional model override for the Phase 1 READ-ONLY fan-out
+     agents (default: the session's model). A cheaper model cuts the audit's
+     largest token cost (~250–350k per batch agent) at some risk to the
+     subtlest findings (mock drift verified against real modules, tautology
+     reasoning) — never downgrade silently; this is a user-set knob. Write
+     agents and the orchestrator always stay on the session's model.
+   - `auditDepth` — `"full"` (default) reads every batch file fully;
+     `"weighted"` reads the timing profile's top-cost files fully and skims
+     the sub-100ms tail (citing the timing table as justification, and saying
+     so in the report — a skimmed file's absence of findings is weaker
+     evidence and must read as such).
    - `notes` — one-paragraph repo facts the audit must respect, harvested from
      CLAUDE.md / testing docs: machine-wide run locks shared with other suites,
      env files the tests need, worker-count env vars, projects CI runs
@@ -89,6 +100,7 @@ benchmark taken with the wrong command is worthless.
     "typecheckCommand": "pnpm typecheck",
     "coverageCommand": "pnpm vitest run --project unit --coverage",
     "docsDir": "docs",
+    "auditDepth": "full",
     "noiseFloorPct": 10,
     "notesFile": "docs/test-audit-notes.md",
     "notes": "bare `pnpm test` also runs the integration project (real DB); e2e suite takes a machine-wide lock — don't benchmark while it runs"
@@ -119,9 +131,14 @@ it is the durable memory the next audit starts from.
 - **Every claim is measured or file:line-cited** — a finding names the file,
   line, mechanism, an S/M/L effort and an impact estimate in milliseconds where
   the timing profile provides one. No "probably slow".
-- **Zero coverage loss, proven.** A bucket that deletes or merges tests runs
-  the coverage command before and after; the diff must show no line previously
-  covered going uncovered (a `diff` of the two coverage summaries per touched
+- **Zero coverage loss, proven — with LINE identity.** A bucket that deletes or
+  merges tests runs the coverage command before and after with BOTH
+  `json-summary` (for the fast per-file count diff) and `lcov` reporters — the
+  summary diff finds a regressed file, the lcov pair names the exact lines, and
+  without the pre-tree lcov you end up reconstructing it by restoring HEAD test
+  files (measured: that recovery works but costs several scoped re-runs). The
+  diff must show no line previously covered going uncovered (a `diff` of the
+  two coverage summaries per touched
   source file is enough). Reading both tests is still required to fold unique
   assertions into a survivor — coverage proves lines, not assertions.
 - **One-shot mode always.** Every scripted run uses the runner's non-watch form
@@ -174,10 +191,13 @@ it is the durable memory the next audit starts from.
 Partition the suite into batches — but weight by MEASURED time, not just line
 count: the top-cost files from the timing profile get the most reader
 attention; a long tail of sub-100ms files can be batched coarsely or skipped
-with the timing table as justification. One agent per batch (6–8 agents),
-launched together. Each brief carries the relevant slice of the timing table
-and is READ-ONLY; agents read every batch file fully plus the helpers/factories
-it leans on, so setup cost is understood.
+with the timing table as justification (`auditDepth: "weighted"` makes this
+the declared mode). One agent per batch (6–8 agents), launched together —
+read-only agents don't contend for write state, and their per-batch reading
+dominates their cost either way; honor `auditModel` if the user set it. Each
+brief carries the relevant slice of the timing table and is READ-ONLY; agents
+read every batch file fully plus the helpers/factories it leans on, so setup
+cost is understood.
 
 Report three categories as tables of
 `file:line | what | why | fix | effort S/M/L | est. impact (ms where measured)`:
@@ -238,10 +258,22 @@ Write `<docsDir>/test-unit-audit-<date>.md` with buckets in THIS order:
 2. **Hot-file surgery** — the top of the timing table: fake timers for real
    waits, hoisted fixtures, merged repeat-arranges, mock-instead-of-import.
    Each row cites its measured per-file cost so the payoff is predicted.
+   The userEvent→fireEvent conversion has a hard classifier: **if any
+   assertion reads focus, selection, or key-driven behavior, the interaction
+   sequence IS the test — do not convert it.** Composite widgets (roving
+   focus, listboxes) ignore bare `.focus()` + synthetic events in ways that
+   flake rather than fail (measured: two escapees at ~1-in-3, one visible
+   only under coverage-instrumentation load). And every file whose conversion
+   touched timing or interaction gets a 5–6× repeat-run probe before the
+   bucket closes.
 3. **Merges, dedup & tier moves** — duplicates folded, wrong-tier tests moved,
    snapshot pruning. The coverage-diff proof applies here.
 4. **Broken tests** — correctness at ~0 runtime cost, grouped: always-pass /
-   mock-drift / nondeterminism / dead-skipped.
+   mock-drift / nondeterminism / dead-skipped. **Every repaired cannot-fail
+   test is verified by a red-probe**: flip the product guard (or comment out
+   the call) in a scratch edit, watch the NEW test go red, revert, and prove
+   the revert with an empty product diff. A repair that was never seen red is
+   the same class of test it replaced.
 5. **Parallelism & isolation experiments** — `isolate: false` for suites with
    no module-state leakage, pool choice (threads vs forks), worker-count
    sweep, `fileParallelism`, `test.concurrent` for I/O-bound groups. Explicitly
@@ -279,25 +311,45 @@ snapshots that are the sanctioned contract format for a serializer.
 
 ## Phase 4 — Implement a bucket (write subagents)
 
-- 3–6 agents per bucket with **disjoint file ownership**. The ORCHESTRATOR is
-  sole owner of shared files — runner configs, setup files, shared
-  factories/mocks — and applies its pass AFTER all agents land, avoiding both
-  conflicts and half-states (an `isolate: false` flip whose spec-side state
-  cleanup hasn't landed).
-- Every brief carries the hard rules: no full-suite runs (an agent MAY run
+- 3–6 agents per bucket with **disjoint file ownership**, launched in
+  **staggered batches of 2–3** rather than all at once: simultaneous launches
+  race the shared prompt-cache prefix (N cache misses instead of 1 miss +
+  N−1 hits), a mid-flight rate limit kills the whole cohort instead of one
+  batch, and concurrent per-agent verification runs oversubscribe the box's
+  cores. (Sequencing further than that buys little — each agent's dominant
+  token cost is its own unique file-reading, cached within the agent either
+  way.) The ORCHESTRATOR is sole owner of shared files — runner configs,
+  setup files, shared factories/mocks — and applies its pass AFTER all agents
+  land, avoiding both conflicts and half-states (an `isolate: false` flip
+  whose spec-side state cleanup hasn't landed).
+- Every brief carries the hard rules: **never run `git stash`** (in a shared
+  worktree it reverts every OTHER agent's uncommitted work; measured: one
+  agent's stash/pop reverted three agents' finished edits, recovered only
+  because the pop happened to conflict); no full-suite runs (an agent MAY run
   only the specific files it owns — unit tier makes that cheap and it beats
   collect-only for catching behavioral breakage — but never during a
   benchmark); no shared-file edits; no commits; read files fully before
   editing; after deletions grep for dangling imports, orphaned factories and
   fixtures, and stale snapshot files (`.snap` orphans linger after their test
   dies — delete them with the test).
+- **Premise corrections are a deliverable.** Executors verify each finding's
+  premise before acting (a "duplicate" describe can be the canonical pin a
+  sibling file explicitly defers to; a helper can live in a different module
+  than the audit said). A wrong premise is a report-back, never a forced
+  edit — and the orchestrator writes each correction into the audit doc, so
+  the report stays true after implementation.
 - Point agents at the repo's own MODEL-CITIZEN specs: the file that already
   uses fake timers correctly, the typed mock factory, the per-file
   `@vitest-environment node` pragma — grep for these and cite them in briefs
   instead of abstract instructions.
 - **Interruption resilience**: agents killed mid-flight keep their transcripts
-  — check `git status` for partial writes, then resume each agent with
-  "re-check current on-disk state first" rather than restarting from zero.
+  — reconcile `git status` against each agent's OWNERSHIP LIST (a file
+  modified that nobody owns, or an owned file unexpectedly clean, means
+  something reverted work — treat any stash as evidence to reconcile, not
+  noise), then resume each agent with "re-check current on-disk state first"
+  rather than restarting from zero. Resumes re-read files, so interruptions
+  are the largest avoidable token cost — another reason for the staggered
+  launches above.
 - After all land: diff review + typecheck + `listCommand`, then the bucket
   benchmark.
 
@@ -311,6 +363,12 @@ snapshots that are the sanctioned contract format for a serializer.
   near noise, and they're nearly free at this tier.
 - **Deletion/merge buckets attach the coverage diff** (Phase 3's coverage
   baseline vs post-bucket) as the zero-coverage-loss proof.
+- **Decompose relocated vs saved.** When a bucket moves tests OUT of the
+  arbiter command (a tier move, a new runner project), the benchmark doc must
+  split the delta into cost that moved and cost that vanished, give the
+  relocated suite its own timed row, AND wire it into CI in the same bucket —
+  a relocation reported as savings is dishonest, and a suite no workflow
+  invokes rots silently (this repo family has the incident to prove it).
 - **Parallelism experiments get the paired protocol**: default config vs
   experiment on the SAME tree, interleaved (A,B,A,B) so machine drift can't
   masquerade as a win; a worse result is reverted and recorded beside the

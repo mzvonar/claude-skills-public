@@ -183,7 +183,10 @@ the old skill name, look for `test-audit-<date>.md` too) with buckets in THIS or
 2. **Merges & shared fixtures** — S-effort per item, spread across specs.
 3. **Structural** — serialization/identity work (M/L; biggest wall-clock).
 4. **Broken tests** — correctness at ~0 runtime cost, grouped: always-pass /
-   dead-stale / order-coupled / misleading.
+   dead-stale / order-coupled / misleading. Every repaired cannot-fail test is
+   verified by a red-probe (flip the product behavior in a scratch edit, watch
+   the new assertion go red, revert with a proven-empty diff) — a repair never
+   seen red is the same class of test it replaced.
 5. **Wrong tier / policy** — tests that belong in unit/component tier; naming.
 
 Cite each finding as file:line PLUS a short quoted anchor — line numbers are
@@ -219,14 +222,23 @@ asserts, load-bearing reloads) — so later passes don't "optimize" them away.
 
 ## Phase 4 — Implement a bucket (write subagents)
 
-- 3–6 agents per bucket with **disjoint file ownership**. The ORCHESTRATOR is sole
-  owner of shared files (test configs, shared helpers) and applies its pass AFTER
-  all agents land — avoiding both conflicts and half-states (a config change whose
-  spec-side prerequisite hasn't landed).
-- Every brief carries the hard rules: no test runs; no shared-file edits; no
-  commits; read files fully before editing; verify with the framework's collect-only
-  mode (`playwright test --list` — proves parse + collection without running) and
-  grep for dangling references and orphaned constants after deletions.
+- 3–6 agents per bucket with **disjoint file ownership**, launched in **staggered
+  batches of 2–3** (simultaneous launches race the shared prompt-cache prefix and
+  a mid-flight rate limit kills the whole cohort instead of one batch; interrupted
+  agents re-read files on resume, so blast radius is token cost). The ORCHESTRATOR
+  is sole owner of shared files (test configs, shared helpers) and applies its
+  pass AFTER all agents land — avoiding both conflicts and half-states (a config
+  change whose spec-side prerequisite hasn't landed).
+- Every brief carries the hard rules: **never run `git stash`** (in a shared
+  worktree it reverts every OTHER agent's uncommitted work — measured in a real
+  run: one agent's stash/pop reverted three agents' finished edits); no test
+  runs; no shared-file edits; no commits; read files fully before editing; verify
+  with the framework's collect-only mode (`playwright test --list` — proves
+  parse + collection without running) and grep for dangling references and
+  orphaned constants after deletions.
+- **Premise corrections are a deliverable**: executors verify each finding's
+  premise before acting; a wrong premise is a report-back, never a forced edit,
+  and the orchestrator writes the correction into the audit doc.
 - Point agents at the repo's own MODEL-CITIZEN specs (grep for existing per-test
   identity helpers, session-minting fixtures) instead of abstract instructions.
   Identity de-serialization shapes that worked: per-FILE identity + storage state
@@ -236,8 +248,11 @@ asserts, load-bearing reloads) — so later passes don't "optimize" them away.
   fixture-resolution ordering matters (a storage-state file consumed by fixtures
   must exist before hooks run — pre-create a placeholder).
 - **Interruption resilience**: agents killed mid-flight (rate limits) keep their
-  transcripts — check `git status` for partial writes, then resume each agent with
-  "re-check current on-disk state first", rather than restarting from zero.
+  transcripts — reconcile `git status` against each agent's OWNERSHIP LIST (an
+  unowned modification, or an owned file unexpectedly clean, means something
+  reverted work; treat any stash as evidence to reconcile, not noise), then
+  resume each agent with "re-check current on-disk state first", rather than
+  restarting from zero.
 - After all land: diff review + typecheck + the collect-only check.
 
 ## Phase 5 — Benchmark the bucket
