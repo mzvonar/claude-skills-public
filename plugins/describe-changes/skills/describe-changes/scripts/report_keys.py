@@ -157,3 +157,33 @@ def check_group_key(e):
 def check_thread_id(e):
     """`note_thread_id` for a note left on a verification-check card."""
     return "checknote-" + (e.get("check_key") or e.get("check") or "unknown")
+
+def displayed_paths(report):
+    """Every path the report already shows as a control that OPENS that file's diff.
+
+    "Everything else that changed" is the complement of this set, so a file listed under a phase or
+    charted in a view is not offered a second time as unsurfaced. Shared by the renderer and by
+    check-report.py, which warns about an `unreviewed_notes` entry naming a path in here: that note
+    has nowhere to render, because its row is not in the list.
+
+    Views are walked GENERICALLY rather than per kind. Their shapes differ (a `screen` tree, `flow`
+    steps carrying both `file` and `files`, `adoption` roots/uses/replaces) and a kind added later
+    would silently escape a per-kind reader — which is the bug this function exists to fix, one
+    level up: a hard-coded exclusion set that did not grow with the sections around it.
+    """
+    seen = set()
+    for f in report.get("findings") or []:
+        if isinstance(f.get("file"), str): seen.add(f["file"])
+        for mg in (f.get("db_package") or {}).get("migrations") or []:
+            if isinstance(mg.get("path"), str): seen.add(mg["path"])
+    for p in report.get("phases") or []:
+        seen.update(x for x in (p.get("files") or []) if isinstance(x, str))
+    def walk(o):
+        if isinstance(o, dict):
+            if isinstance(o.get("file"), str): seen.add(o["file"])
+            seen.update(x for x in (o.get("files") or []) if isinstance(x, str))
+            for v in o.values(): walk(v)
+        elif isinstance(o, list):
+            for v in o: walk(v)
+    walk(report.get("views") or [])
+    return seen

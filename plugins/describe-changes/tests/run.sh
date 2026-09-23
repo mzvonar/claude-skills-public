@@ -605,6 +605,140 @@ grep -q "Diverges from" "$OUT/index.html" && grep -q 'data-loc="docs/adr/0007-ne
 mv "$OUT/report-real.json" "$OUT/report.json"; python3 "$S/render-report.py" --dir "$OUT" >/dev/null
 echo "convention citations OK"
 
+# --- Plain-first prose (analysis-guide §7) ---------------------------------------------------
+# The header's caps were the only prose enforcement for a long while, and the header was the only
+# section that read well; `what` averaged four sentences on a real report and one reached seven.
+# So: an ACCEPTED control first — these rules must pass a well-written finding, or they are just
+# rejecting everything — then one rejected fixture per rule, each checked for the phrase that tells
+# the author which rule fired.
+python3 - "$OUT" <<'PY'
+import json, os, sys
+d = sys.argv[1]; r = json.load(open(os.path.join(d, "report.json")))
+base = dict(r["findings"][0], id="C1", severity="critical", tags=[])
+base.pop("diverges_from", None)
+GOOD = ("A step that does not name a permission mode now runs with every prompt skipped, where it "
+        "used to ask. `resolveMode()` is where the fallback changed.")
+def w(name, **kw): json.dump(dict(r, findings=[dict(base, **kw)]), open(os.path.join(d, name), "w"))
+w("prose-ok.json", title="`spawnClaude` skips every permission prompt when no mode is set",
+  what=GOOD, verify="Is bypass the intended default for a step with no mode?",
+  why_human="Default policy for unattended runs is a judgement call with security consequences.")
+w("prose-symbol-first.json", what="`resolveMode()` returns 'bypass' where it returned 'default'. "
+                                  "So the step skips every prompt.")
+w("prose-long.json", what=GOOD + " " + "The daemon reads it once per step. " * 14)
+w("prose-sentences.json", what="A step with no mode now skips every prompt. It used to ask. "
+                               "The daemon reads it once. Nothing else changed.")
+w("prose-title.json", title="A step that declares no permission mode at all now runs with every "
+                            "single permission prompt skipped, where it previously stopped and asked "
+                            "the operator to confirm each one", what=GOOD)
+PY
+# The control. If this fails, every row below it is meaningless.
+python3 "$S/check-report.py" "$OUT/prose-ok.json" >/dev/null 2>&1 \
+  || fail "the prose rules reject a compliant finding: $(python3 "$S/check-report.py" "$OUT/prose-ok.json" 2>&1)"
+# Each rejection must NAME its rule — an author who cannot tell which cap fired rewrites at random.
+prose_reject() {  # fixture, phrase the message must carry
+  local msg; msg="$(python3 "$S/check-report.py" "$OUT/$1.json" 2>&1 || true)"
+  python3 "$S/check-report.py" "$OUT/$1.json" >/dev/null 2>&1 && fail "check-report accepted $1"
+  case "$msg" in *"$2"*) ;; *) fail "$1 rejected without naming the rule ($2): $msg" ;; esac
+}
+prose_reject prose-symbol-first "opens on a code symbol"
+prose_reject prose-long         "hard cap 500"
+prose_reject prose-sentences    "sentences; cap 3"
+prose_reject prose-title        "hard cap 130"
+# Warnings are advisory but must still fire, or the soft caps are decoration. Count them exactly:
+# a `contains` match cannot tell a rule that fired from one the checker is blind to.
+PROSE_W="$(python3 - "$OUT" "$S" <<'PY'
+import json, os, re, subprocess, sys
+d, s = sys.argv[1], sys.argv[2]
+r = json.load(open(os.path.join(d, "report.json")))
+base = dict(r["findings"][0], id="C1", severity="critical", tags=[]); base.pop("diverges_from", None)
+f = dict(base,
+         title="A step with no permission mode now skips every prompt instead of asking the operator first",  # > 80
+         what="A step with no mode now skips every prompt. `resolveMode()`, `spawnClaude` and `runStep` all read it.",  # 3 symbols
+         verify="Is bypass the intended default? And should an unset mode be an error instead?",  # 2 questions
+         why_human="Default policy for unattended sessions is a judgement call with security consequences, and "
+                   "only the person who wrote the workflow can say whether an unset mode was meant to mean bypass "
+                   "or was simply never considered when the field was introduced at all.")  # > 240
+json.dump(dict(r, findings=[f]), open(os.path.join(d, "prose-warn.json"), "w"))
+out = subprocess.run([sys.executable, os.path.join(s, "check-report.py"), os.path.join(d, "prose-warn.json")],
+                     capture_output=True, text=True).stdout
+print(len([l for l in out.splitlines() if l.startswith("WARN: C1:")]))
+PY
+)"
+[ "$PROSE_W" = "4" ] || fail "expected 4 soft prose warnings on the fixture, got $PROSE_W"
+python3 "$S/check-report.py" "$OUT/prose-warn.json" >/dev/null 2>&1 || fail "soft prose caps must WARN, not fail the report"
+# Phase narratives warn on the same shape, and a plain one must not.
+PHASE_W="$(python3 - "$OUT" "$S" <<'PY'
+import json, os, subprocess, sys
+d, s = sys.argv[1], sys.argv[2]
+r = json.load(open(os.path.join(d, "report.json")))
+def warns(nar):
+    p = dict(r["phases"][0], narrative=nar)
+    json.dump(dict(r, phases=[p]), open(os.path.join(d, "prose-phase.json"), "w"))
+    out = subprocess.run([sys.executable, os.path.join(s, "check-report.py"), os.path.join(d, "prose-phase.json")],
+                         capture_output=True, text=True).stdout
+    return len([l for l in out.splitlines() if l.startswith("WARN: phase ")])
+print(warns("`resolveModel` moves into the shared module and gains an effort field."),
+      warns("A step can now carry its own model and effort. The types move to the shared module."))
+PY
+)"
+[ "$PHASE_W" = "1 0" ] || fail "phase narrative: expected '1 0' warnings (symbol-first, then plain), got '$PHASE_W'"
+echo "plain-first prose OK"
+
+# --- No file renders twice (1.26.0) ------------------------------------------------------------
+# "Everything else that changed" is the complement of every path shown above. It was the complement
+# of the FINDINGS alone, which put every phase file in both sections: 14 of 24 rows on a real report.
+# Two properties, and the second is the one that makes the first safe:
+#   1. a path under a phase / a view / a finding is NOT a row here
+#   2. every substantive file is still openable SOMEWHERE — the census stays complete
+python3 - "$OUT" <<'PY'
+import json, os, sys
+d = sys.argv[1]; r = json.load(open(os.path.join(d, "report.json")))
+m = json.load(open(os.path.join(d, "diff-model.json")))
+sub = [f["path"] for f in m["files"] if f["substantive_hunks"]]
+flagged = {f["file"] for f in r["findings"]}
+free = [p for p in sub if p not in flagged]
+assert len(free) >= 2, f"fixture needs 2 unflagged substantive files, has {len(free)}"
+# One goes under a phase, one under a view; the rest must still be listed.
+r["phases"][0]["files"] = [free[0]]
+r["views"] = [{"kind": "flow", "title": "t", "steps": [{"label": "s", "file": free[1]}]}]
+# …and a note on the phase file, which now has nowhere to render.
+r["unreviewed_notes"] = {free[0]: "pass-through only"}
+json.dump(r, open(os.path.join(d, "dup.json"), "w"))
+json.dump({"phase": free[0], "view": free[1], "sub": sub}, open(os.path.join(d, "dup-expect.json"), "w"))
+PY
+cp "$OUT/report.json" "$OUT/report-real.json"; cp "$OUT/dup.json" "$OUT/report.json"
+python3 "$S/render-report.py" --dir "$OUT" >/dev/null
+python3 - "$OUT" <<'PY'
+import json, os, re, sys
+d = sys.argv[1]; h = open(os.path.join(d, "index.html")).read()
+x = json.load(open(os.path.join(d, "dup-expect.json")))
+rows = set(re.findall(r'class="rp" data-open="([^"]+)"', h))
+for kind in ("phase", "view"):
+    assert x[kind] not in rows, f"{x[kind]} is under a {kind} AND in 'Everything else'"
+# The census: nothing became unreachable by being excluded.
+openable = set(re.findall(r'data-open="([^"]+)"', h))
+lost = [p for p in x["sub"] if p not in openable]
+assert not lost, f"substantive files openable nowhere: {lost}"
+# The count in the heading describes the rows under it.
+n = int(re.search(r"Everything else that changed <span class=\"cnt\">(\d+) files", h).group(1))
+assert n == len(rows), f"heading says {n} files, {len(rows)} rows rendered"
+assert "not shown above" in h, "the heading still claims the old 'nothing flagged' set"
+print(f"dedupe: {len(rows)} rows, {len(openable)} openable, census complete")
+PY
+DUP_MSG="$(python3 "$S/check-report.py" "$OUT/dup.json" 2>&1 || true)"
+case "$DUP_MSG" in *"renders nowhere"*) ;; *) fail "a note on a path shown above must warn: $DUP_MSG" ;; esac
+# The key really is `unreviewed_notes` — this check read `unreviewed` until 1.26.0 and never ran.
+python3 - "$OUT" <<'PY'
+import json, os, sys
+d = sys.argv[1]; r = json.load(open(os.path.join(d, "dup.json")))
+r["unreviewed_notes"] = {"src/does/not/exist.ts": "ghost"}
+json.dump(r, open(os.path.join(d, "dup-ghost.json"), "w"))
+PY
+GHOST_MSG="$(python3 "$S/check-report.py" "$OUT/dup-ghost.json" 2>&1 || true)"
+case "$GHOST_MSG" in *"is not in the diff"*) ;; *) fail "a note naming a path outside the diff must warn: $GHOST_MSG" ;; esac
+mv "$OUT/report-real.json" "$OUT/report.json"; python3 "$S/render-report.py" --dir "$OUT" >/dev/null
+echo "no file rendered twice OK"
+
 # --- Two readings: provenance + the divergence between the passes (1.8.0) --------------------
 # The value of a second, independent pass is knowing which findings the author did NOT see coming.
 # A merged list destroys that, so the split has to survive validation AND reach the page.

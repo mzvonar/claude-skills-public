@@ -36,8 +36,13 @@ Keys marked ● are required.
   ],
   "range": "main..feat/3.2 (+ working tree)",                          // optional; meta.json has it
 
-  "phases": [                                                         // ● dependency order, 2–6
-    { "id": "p1", "title": "Schema + types", "narrative": "…1–3 sentences…", "files": ["src/shared/workflow.ts"] }
+  // ● dependency order, 2–6. The narrative is the first prose anyone meets, before a line of code:
+  // say what the phase DOES in a stranger's words, then name the files. Opening on a symbol warns.
+  //   ✗ "`resolveModel` moves into `shared/workflow.ts` and gains an `effort` field."
+  //   ✓ "A step can now carry its own model and effort. The types that describe it move to the
+  //      shared module so the daemon and the UI read one definition."
+  "phases": [
+    { "id": "p1", "title": "Schema + types", "narrative": "…1–3 sentences, ≤ 320 chars…", "files": ["src/shared/workflow.ts"] }
   ],
 
   "graph": {                                                          // ●
@@ -92,10 +97,19 @@ Keys marked ● are required.
     },
     {
       "id": "C2", "severity": "critical",
+      // PLAIN FIRST — the reader has not opened the code and decides from the first line. `what`
+      // says what a PERSON meets in sentence one, and may name the symbol in sentence two; never
+      // the reverse. ≤ 2 sentences, ≤ 300 chars, ≤ 2 backticked symbols, and check-report.py
+      // REJECTS a `what` whose first sentence names a symbol — the one prose rule that is an error,
+      // because it is the commonest and always fixable by reordering. Full rules: analysis-guide §7.
+      //   ✗ "`resolveMode()`'s fallback branch returns 'bypass' where it previously returned
+      //      'default', so `spawnClaude` receives `--dangerously-skip-permissions`."
+      //   ✓ "A step that does not name a permission mode now runs with every prompt skipped, where
+      //      it used to ask. `resolveMode()` is where the fallback changed."
       "title": "`spawnClaude` passes `--dangerously-skip-permissions` whenever `execution.mode` is unset",
       "verify": "Is bypass the intended default for steps that do not declare a mode?",
       "why_human": "Default policy for unattended sessions is a judgement call with security consequences; no test encodes the intent.",
-      "what": "The fallback branch in `resolveMode()` returns 'bypass' instead of the previous 'default'.",
+      "what": "A step that does not name a permission mode now runs with every prompt skipped, where it used to ask. `resolveMode()` is where the fallback changed.",
       "file": "src/daemon/executor.ts", "lines": "118-131", "hunks": ["F4H2"],
       "tags": ["divergence", "auth", "blast-radius"],
       // WHO raised it. Optional; set it only on a two-pass run (SKILL.md §2b), and set it on EVERY
@@ -150,7 +164,12 @@ Keys marked ● are required.
   ],
 
   "folded": [ /* copy diff-model.json → folds verbatim; the HTML renders the MODEL's copy */ ],  // ●
-  "unreviewed_notes": {                                              // substantive files with no finding: why
+  // "Everything else that changed" is the COMPLEMENT of every path shown above — a finding's `file`,
+  // a DB package's migrations, a phase's `files`, a view's file chips. Each of those already opens
+  // the file's diff, so a file listed there is never offered again here. Notes therefore only make
+  // sense for files that actually land in that list; a note on a path shown above renders NOWHERE,
+  // and the validator warns. Say it in the phase narrative instead.
+  "unreviewed_notes": {                                              // files in NO section above: why they need none
     "src/pwa/components/StepCard.tsx": "prop pass-through only; typed end to end"
   }
 }
@@ -159,6 +178,16 @@ Keys marked ● are required.
 Rules the validator enforces: ≤ 3 critical (error), ≤ 7 medium (warn); each finding has `title`,
 `verify`, `why_human`, `file`; finding ids are unique and match severity (`C`/`M`/`L`); every file path
 exists in the diff; every edge references a node; graph ≤ 40 nodes (warn).
+
+On a finding's prose (analysis-guide §7). **Errors:** a `what` whose FIRST SENTENCE names a
+backticked symbol, `what` > 500 chars, `what` > 3 sentences, `title` > 130 chars. **Warnings:**
+`title` > 80 chars or naming > 2 symbols, `what` > 300 chars or > 2 sentences or naming > 2 symbols,
+`verify` asking more than one question or running > 200 chars, `why_human` > 240 chars. A phase
+narrative warns when it opens on a symbol, runs past 3 sentences, or exceeds 320 chars. These mirror
+the header caps below onto the sections a reviewer actually spends time in — for the same reason,
+measured on the same failure: on a real report the capped `summary` came in at 431 chars with no
+code names while the uncapped `what` fields averaged four sentences, one of them reaching seven
+sentences and thirteen symbols. Same author, same run. The difference was the check.
 
 On `db_package` (all errors unless marked): at most one finding carries it, and one MUST when
 `diff-model.json → db` is set; `headline_kind: "schema"` requires `file` to be the schema artifact

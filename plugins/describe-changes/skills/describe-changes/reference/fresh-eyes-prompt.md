@@ -67,4 +67,27 @@ inverted the result, and the finding became the fix.
 **Prefer the claim you can falsify.** "`retry()` now swallows `AbortError` — was that intended?"
 beats "error handling was improved".
 
+## How to write it
+
+You have just spent an hour inside this code. Your reader has not, and decides from the first line
+whether to spend ten minutes here. So: **sentence one says what a PERSON meets** — what breaks, what
+they can no longer do, what they now see — in words someone outside the team knows. **Sentence two
+may name the symbol** they must open. Then stop; the diff renders directly beneath the card.
+
+```
+✗ `dictionaryFilterMeta` collapses an empty option list to `undefined` on the stated grounds that
+  `undefined` renders a free-text editor. It does not. `ValueEditor` picks the component from
+  `field.type` alone, so a `select` field always gets `SelectEditor`, which does `options ?? []`…
+
+✓ When a code list comes back empty, the operator gets a dropdown with nothing in it and no way to
+  type — so the filter silently disappears instead of failing. The comments promise a text box
+  instead; `dictionaryFilterMeta` is where that promise is made.
+```
+
+One idea per sentence — two em-dashes means two sentences. Short words where they exist (*sends*,
+not *propagates*). No insider shorthand ("the chip rolls away", "it fails open"): say what happens.
+Numbers, paths, line ranges and the claim itself stay exact — plain is about the words, never the
+certainty. The full rules and per-field caps are `reference/analysis-guide.md` §7; `check-report.py`
+rejects a `what` whose first sentence names a code symbol, so write the plain line first.
+
 Return the JSON array as your final message. It is data, not a report — no preamble.

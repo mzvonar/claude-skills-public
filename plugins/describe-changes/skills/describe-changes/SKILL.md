@@ -1,6 +1,6 @@
 ---
 name: describe-changes
-version: "1.25.4"
+version: "1.26.0"
 description: >
   Present an implemented change to a human reviewer the way a human needs it: what was done and why,
   a visual map of the high-level change (who calls whom, where data flows, what moved/split/renamed),
@@ -232,8 +232,14 @@ the exact shape in `reference/report-schema.md`. The non-negotiables:
 python3 "$S/check-report.py" "$OUT/report.json"
 ```
 
-Fix every `ERROR` (budget overflow → demote, unknown file → fix path, bad edge → fix node id).
-Treat `WARN` as advice.
+Fix every `ERROR` (budget overflow → demote, unknown file → fix path, bad edge → fix node id, a
+`what` opening on a symbol → put the plain sentence first).
+
+Treat `WARN` as advice, **except the prose warnings** — length, sentence count, symbol count, on a
+`title` / `what` / `verify` / `why_human` / phase narrative. Rewrite those. They are not taste: they
+are the difference between a section a reviewer reads and one they skim, which is the whole failure
+this tool exists to prevent. "Plain English" as advice has already lost to the urge to explain your
+own work once, which is why the counts exist (analysis-guide §7).
 
 ## 5. Render + serve
 
@@ -424,10 +430,23 @@ first; set a key only when detection is wrong.
 
 ## Style rules for everything you write
 
-- Plain English, stranger-readable. Name functions/files in backticks. No "I have successfully…".
-- Prefer *claims the human can falsify* over adjectives: "`retry()` now swallows `AbortError` — was
-  that intended?" beats "error handling was improved".
-- Important first, always. Short first, always. The human may stop reading at any line.
+Your reader has not opened the code and is deciding, from your first line, whether to spend ten
+minutes here. Write so that line lands without your symbol names.
+
+- **Plain first.** Sentence one says what a PERSON meets — what breaks, what they can no longer do,
+  what they now see — in words someone outside the team knows. Sentence two may name the one symbol
+  they must open. Never the reverse; `check-report.py` rejects a `what` that opens on a symbol.
+- **One idea per sentence.** Two em-dashes is two sentences. Short words where they exist: *sends*
+  not *propagates*, *stops* not *precludes*. No insider shorthand ("it fails open") — say what
+  happens.
+- **Two sentences, then stop.** The diff renders directly beneath; mechanism the reviewer can simply
+  read does not belong in the summary of it.
+- **Plain is about the words, not the certainty.** Numbers, paths, line ranges and the claim itself
+  stay exact. Prefer *claims the human can falsify* over adjectives: "`retry()` now swallows
+  `AbortError` — was that intended?" beats "error handling was improved". No "I have successfully…".
+- **Important first, always. Short first, always.** The human may stop reading at any line.
+
+The worked before/after and the per-field caps are in `reference/analysis-guide.md` §7.
 
 ---
 To change this skill, do not edit this copy: use `/dev-tools:update-skill`, or see `docs/updating-skills.md` in `mzvonar/claude-skills-public`.

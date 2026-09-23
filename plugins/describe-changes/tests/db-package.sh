@@ -48,7 +48,12 @@ for f in sorted(findings, key=lambda f: {"critical": 0, "medium": 1, "low": 2}[f
     counters[f["severity"]] += 1
     f["id"] = {"critical": "C", "medium": "M", "low": "L"}[f["severity"]] + str(counters[f["severity"]])
 r = {"title": "db case", "intent": "exercise the db package", "summary": "A fixture change touching the database and some code, used to prove the package renders as specified.",
-     "phases": [{"id": "p1", "title": "All of it", "narrative": "One phase.", "files": files[:3]}],
+     # The phase names the flagged files and nothing else. Since 1.26.0 a phase file is excluded from
+     # "Everything else" too, so an arbitrary `files[:3]` here would quietly empty whichever area
+     # buckets this suite asserts on — it did: tooling and docs vanished and the bucket-order row read
+     # ['code', 'tests']. These paths are already excluded as findings, so the phase adds no exclusion
+     # of its own and every row below stays about the db package. Phase exclusion is proven in run.sh.
+     "phases": [{"id": "p1", "title": "All of it", "narrative": "One phase.", "files": sorted({f["file"] for f in findings})}],
      "graph": {"nodes": [], "edges": []}, "findings": findings, "folded": m["folds"], "unreviewed_notes": {}}
 json.dump(r, open(os.path.join(d, "report.json"), "w"), indent=1)
 print("report built:", [(f["id"], f["severity"], f["file"]) for f in findings])
@@ -164,8 +169,23 @@ assert order == ["C1", "C2"], order
 print("A render OK")
 PY
 # The §7 regression in its purest form: strip the sidecar from the exclusion and the leak returns.
-# (Guards the renderer line, not the test fixture.)
-grep -q 'for mg in ((f.get("db_package") or {}).get("migrations") or \[\])' "$S/render-report.py" || fail "renderer no longer excludes sidecar files from the remainder"
+# Guards the DERIVATION, not the test fixture — it lives in report_keys.displayed_paths since 1.26.0,
+# shared with check-report.py so the two cannot answer "is this path shown above" differently.
+grep -q 'db_package' "$S/report_keys.py" || fail "displayed_paths no longer excludes sidecar files from the remainder"
+python3 - "$S" <<'PY'
+import sys, os
+sys.path.insert(0, sys.argv[1])
+from report_keys import displayed_paths
+r = {"findings": [{"file": "prisma/schema.prisma",
+                   "db_package": {"migrations": [{"path": "prisma/migrations/1_a/migration.sql"}]}}],
+     "phases": [{"files": ["src/a.ts"]}],
+     "views": [{"kind": "flow", "steps": [{"file": "src/b.ts", "files": ["src/c.ts"]}]}],
+     "graph": {"nodes": [{"file": "src/never.ts"}]}}
+got = displayed_paths(r)
+want = {"prisma/schema.prisma", "prisma/migrations/1_a/migration.sql", "src/a.ts", "src/b.ts", "src/c.ts"}
+assert got == want, f"displayed_paths: {got ^ want}"   # graph nodes are NOT openable — map_list prints text
+print("displayed_paths OK")
+PY
 
 # ── B. a SINGLE migration: no per-file note, whatever the file carries ─────────────────────────
 repo b

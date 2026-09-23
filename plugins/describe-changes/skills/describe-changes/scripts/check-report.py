@@ -8,6 +8,12 @@ references a known node, ids are unique and follow C1/M1/L1 numbering.
 """
 import json, sys, os, re, subprocess
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# ONE derivation of "which paths does the report already show", shared with the renderer rather than
+# re-walked here. Two local walks of the same question drift, and the drift is silent: the validator
+# would clear a note the renderer then drops on the floor.
+from report_keys import displayed_paths  # noqa: E402
+
 SEV = {"critical": "C", "medium": "M", "low": "L"}
 SEV_RANK = {"critical": 0, "medium": 1, "low": 2}
 # The DB package (report-schema.md → db_package). Severity per reason kind is decided in ONE place —
@@ -23,6 +29,16 @@ DB_NOTE_MAX = 100
 PROVENANCE = {"fresh", "author", "both"}
 MAX_CRITICAL, MAX_MEDIUM = 3, 7
 REQ_TOP = ["title", "summary", "phases", "graph", "findings", "folded"]
+
+SENTENCE_RE = re.compile(r"[.!?](?:\s|$)")
+SYMBOL_RE = re.compile(r"`[^`]+`")
+
+def n_sentences(s): return len(SENTENCE_RE.findall(s or ""))
+def n_symbols(s): return len(SYMBOL_RE.findall(s or ""))
+
+def first_sentence(s):
+    m = SENTENCE_RE.search(s or "")
+    return (s or "")[:m.end()] if m else (s or "")
 
 def repo_root_of(report_path):
     d = os.path.dirname(os.path.abspath(report_path))
@@ -72,6 +88,66 @@ def check_divergence(f, fid, root):
     if not rules and len(set(paths)) < 2:
         errs.append(f"{fid}: 'diverges_from' cites one neighbour and no written rule — one sibling is a "
                     f"coincidence. Cite the rule, or a second file that does it the other way.")
+    return errs, warns
+
+def check_prose(f, fid):
+    """Plain first. The finding must be readable by someone who has not opened the code yet.
+
+    The header's prose caps were this file's only style enforcement for a long while, and the header
+    is the one section that reliably reads well. Every other field got the same advice in words —
+    "plain English for a stranger" — and advice loses to the urge to explain your own work: measured
+    on a real report, `summary` came in at 431 chars with no code names while the same run's `what`
+    fields averaged four sentences and one reached seven and thirteen backticked symbols. Same
+    author, same session; the difference was the check. So the header's rules are mirrored here.
+
+    The one rule worth an ERROR is the opening. A `what` that starts on a backticked identifier is
+    unreadable to the only person it is written for — a reviewer who has not opened that file — and
+    it is the commonest shape, because the author is already inside the code when they write it. It
+    is also always fixable: say what a PERSON meets, then name the symbol in the next sentence.
+    Phase narratives get the same rule as a WARNING, not an error: a phase legitimately announces a
+    new module by name ("A new `parser.ts` replaces the regex"), where a finding never has to."""
+    errs, warns = [], []
+
+    t = f.get("title", "")
+    if len(t) > 130:
+        errs.append(f"{fid}: title is {len(t)} chars; hard cap 130. It is the line that decides whether "
+                    f"the finding is read at all — state the claim and drop the qualifiers.")
+    elif len(t) > 80:
+        warns.append(f"{fid}: title is {len(t)} chars — aim for ≤ 80")
+    if n_symbols(t) > 2:
+        warns.append(f"{fid}: title names {n_symbols(t)} code symbols — name the one the reviewer opens, say the rest in words")
+
+    w = f.get("what", "")
+    if w:
+        if n_symbols(first_sentence(w)):
+            errs.append(f"{fid}: 'what' opens on a code symbol. Lead with what a PERSON meets — what breaks, "
+                        f"what they can no longer do, in words someone outside the team knows — and name the "
+                        f"symbol in the sentence after it.")
+        if len(w) > 500:
+            errs.append(f"{fid}: what is {len(w)} chars; hard cap 500. Mechanism the reviewer can read in the "
+                        f"diff below does not belong in the summary of it.")
+        elif len(w) > 300:
+            warns.append(f"{fid}: what is {len(w)} chars — aim for ≤ 300, about two sentences")
+        if n_sentences(w) > 3:
+            errs.append(f"{fid}: what runs to {n_sentences(w)} sentences; cap 3. One for what a person meets, "
+                        f"one for the mechanism — the diff carries the rest.")
+        elif n_sentences(w) > 2:
+            warns.append(f"{fid}: what runs to {n_sentences(w)} sentences — two is the target")
+        if n_symbols(w) > 2:
+            warns.append(f"{fid}: what names {n_symbols(w)} code symbols — keep the ones the reviewer must open, "
+                         f"say the rest in plain words")
+
+    v = f.get("verify", "")
+    if v.count("?") > 1:
+        warns.append(f"{fid}: verify asks {v.count('?')} questions — one question the reviewer can answer by "
+                     f"looking; a second one splits their attention or belongs in another finding")
+    if len(v) > 200:
+        warns.append(f"{fid}: verify is {len(v)} chars — it is a question, not its justification")
+
+    wh = f.get("why_human", "")
+    if len(wh) > 240:
+        warns.append(f"{fid}: why_human is {len(wh)} chars — one sentence naming what only a person can settle "
+                     f"(intent, judgement, domain, irreversibility)")
     return errs, warns
 
 def check_db_package(f, fid, model, known_files):
@@ -202,13 +278,13 @@ def main():
         errs.append(f"summary is {n_sum} chars; hard cap 700. Cut to what a reviewer cannot infer from the intent line.")
     elif n_sum > 420:
         warns.append(f"summary is {n_sum} chars — aim for ≤ 420 (about 3 sentences)")
-    if len(re.findall(r"[.!?](?:\s|$)", r["summary"])) > 4:
+    if n_sentences(r["summary"]) > 4:
         warns.append("summary runs to more than 4 sentences — the header is skimmed, not read")
     # Mechanism-first tell. A functional summary names what a person can now do; a mechanical one
     # names the symbols that do it. Counting `backticked` identifiers is a crude proxy, but it fires
     # on exactly the shape that reads like a commit message — and that shape is the second-commonest
     # reason this section gets skipped, after length.
-    n_sym = len(re.findall(r"`[^`]+`", r["summary"]))
+    n_sym = n_symbols(r["summary"])
     if n_sym > 3:
         warns.append(f"summary names {n_sym} code symbols — say what a PERSON can now do and which rule stops them; keep mechanism for where it IS the decision")
     if r.get("intent"):
@@ -250,9 +326,10 @@ def main():
         if known_files is not None and f.get("file") and f["file"] not in known_files:
             errs.append(f"{fid}: file '{f['file']}' is not in the diff")
         if f.get("lines") and not re.fullmatch(r"\d+(-\d+)?", str(f["lines"])): errs.append(f"{fid}: lines must be 'N' or 'N-M'")
-        if len(f.get("why_human", "")) > 400: warns.append(f"{fid}: why_human is long ({len(f['why_human'])} chars) — compress")
         if "provenance" in f and f["provenance"] not in PROVENANCE:
             errs.append(f"{fid}: provenance must be one of {'|'.join(sorted(PROVENANCE))} (got {f['provenance']!r})")
+        e1, w1 = check_prose(f, fid)
+        errs += e1; warns += w1
         e2, w2 = check_divergence(f, fid, repo_root)
         errs += e2; warns += w2
         if "db_package" in f:
@@ -327,10 +404,29 @@ def main():
     for i, p in enumerate(r["phases"]):
         for key in ("id", "title", "narrative"):
             if not p.get(key): errs.append(f"phase[{i}]: missing '{key}'")
+        # Altitude 1: this is what a reader meets before any code, so it is read by someone who knows
+        # nothing yet. A narrative that opens on a symbol name tells them nothing — warned, not erred,
+        # because a phase may legitimately introduce a new module by name (see check_prose).
+        nar, pid = p.get("narrative", ""), p.get("id", f"[{i}]")
+        if n_symbols(first_sentence(nar)):
+            warns.append(f"phase {pid}: narrative opens on a code symbol — say what the phase DOES in words "
+                         f"a stranger knows, then name the file")
+        if n_sentences(nar) > 3:
+            warns.append(f"phase {pid}: narrative runs to {n_sentences(nar)} sentences — 1 to 3")
+        if len(nar) > 320:
+            warns.append(f"phase {pid}: narrative is {len(nar)} chars — aim for ≤ 320")
         for fp in p.get("files", []):
             if known_files is not None and fp not in known_files: errs.append(f"phase {p.get('id')}: file '{fp}' not in diff")
-    for fid in r.get("unreviewed", []):
-        if known_files is not None and fid not in known_files: warns.append(f"unreviewed '{fid}' not in diff")
+    # The key is `unreviewed_notes` and always was; this read `r.get("unreviewed", [])` until 1.26.0,
+    # so it defaulted to [] on every report ever validated and the check never once ran.
+    shown = displayed_paths(r)
+    for path in r.get("unreviewed_notes") or {}:
+        if known_files is not None and path not in known_files:
+            warns.append(f"unreviewed_notes '{path}' is not in the diff — the note renders nowhere")
+        elif path in shown:
+            warns.append(f"unreviewed_notes '{path}' is already shown above (a finding, a phase or a view), so it "
+                         f"is not in 'Everything else' and the note renders nowhere — drop it, or say it in the "
+                         f"phase narrative")
 
     for w in warns: print("WARN:", w)
     for e in errs: print("ERROR:", e)

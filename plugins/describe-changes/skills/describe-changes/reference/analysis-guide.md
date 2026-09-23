@@ -18,6 +18,11 @@ Ranking between classes when the cap bites: irreversible damage (data, auth, mon
 convention divergence (it propagates — the next change copies it) > a localised correctness question.
 Rather than 5 criticals, produce 3 criticals and put the other two first in medium.
 Zero findings is a valid report. Say so plainly; the "Everything else" list carries the honesty.
+It holds the files shown in **no section above** — not a finding, not a phase's `files`, not a view's
+chips — because each of those already opens the file's diff, and a file offered twice reads as
+unsurfaced when it was surfaced. So the honesty property is the union, not this list alone: every
+substantive file is reachable from exactly one place. A phase that lists a file HAS surfaced it, and
+an `unreviewed_notes` entry for it renders nowhere (the validator warns).
 That list is grouped by each file's `area` from `diff-model.json` into four buckets, in this order —
 **Code**, **Tests**, **Tooling**, **Docs** — so a reader can give code the glance and skip the rest as
 a block. An empty **Tests** bucket still renders (`Tests · 0 files`): "did they test it?" is the
@@ -76,11 +81,13 @@ says not to" is a finding.
 
 ## 3. Shape of a finding
 
+Write all four to §7 — plain first, and the caps there are enforced, not advised.
+
 - `title` — the claim, ≤ 80 chars, falsifiable: "`saveUser` now upserts instead of inserting".
 - `verify` — one question the human can answer by looking: "Is silently overwriting an existing
   row the intended behaviour for duplicate emails?"
 - `why_human` — why a machine can't settle it (intent, judgement, domain, irreversibility).
-- `what` — 1–2 sentences of mechanism, optional. Lead with the question, not the lecture.
+- `what` — optional, ≤ 2 sentences. What a person meets first, the symbol second; never the reverse.
 - `file`, `lines` (new-side line or range), `hunks` (`["F3H2"]`) — the renderer fetches the code.
 - `tags` — from the list above; they become filter buttons and feed the learning loop.
 - `diverges_from` — required on a `convention` finding: the rule or the neighbours it contradicts,
@@ -91,7 +98,9 @@ says not to" is a finding.
 
 Group by **dependency**, not by file or commit: types/schema → core logic → integration/wiring →
 UI → tests/docs. Each phase: a title a stranger understands, 1–3 sentences, the files. 2–6 phases;
-a one-file change gets one phase.
+a one-file change gets one phase. The narrative is the first prose a reader meets, before any code,
+so §7 applies hardest here: say what the phase does in ordinary words, then name the files. A
+narrative opening on a symbol name has told a first-time reader nothing.
 
 ## 5. The map (altitude 1, visual)
 
@@ -118,10 +127,65 @@ notice a fold that hides a real change (a "rename" at 52% similarity that also c
 snapshot that changed because behaviour did), surface that as a finding — that is exactly the
 "P0 buried in the noise" failure this tool exists to prevent.
 
-## 7. Writing
+## 7. Writing — plain first
 
-Plain English for a stranger. Name code in backticks. Verbs over adjectives. No praise, no
-"successfully". Every sentence either tells the reviewer what to look at or why — delete the rest.
+You are writing for someone who has not opened the code yet, on a phone, deciding whether this is
+the finding worth their next ten minutes. They do not know your symbol names. Write so the first
+line lands without them.
+
+**The rule: sentence one is what a PERSON meets. Sentence two may name the symbol.**
+
+Sentence one says what breaks, what someone can no longer do, or what they now see — in words
+someone outside the team knows. Only then name the one or two symbols the reviewer has to open. Two
+sentences, and stop: the diff is right underneath, so mechanism the reviewer can simply read does
+not belong in the summary of it.
+
+```
+✗ `dictionaryFilterMeta` collapses an empty option list to `undefined` on the stated grounds that
+  `undefined` renders a free-text editor. It does not. `ValueEditor` picks the component from
+  `field.type` alone, so a `select` field always gets `SelectEditor`, which does `options ?? []` and
+  renders a trigger over an empty listbox with no input. `committedFilter` then prunes the null
+  value, so Apply stays disabled and the chip rolls away.
+
+✓ When a code list comes back empty, the operator gets a dropdown with nothing in it and no way to
+  type — so the filter silently disappears instead of failing. The comments promise a text box
+  instead; `dictionaryFilterMeta` is where that promise is made.
+```
+
+Same claim, same falsifiability, one third the length. The second one can be read cold.
+
+Six habits that produce the first shape. Each is the tell of an author writing from inside the code:
+
+- **Opening on a symbol.** `check-report.py` rejects it outright — it is the one prose rule that is
+  an error, because it is the commonest and it is always fixable by reordering two sentences.
+- **Chained clauses.** A sentence with two em-dashes or three commas is two or three sentences
+  pretending to be one. Split it. One idea per sentence.
+- **Stacked nouns.** "the free-text fallback documented in five places" → "the text box the comments
+  promise". If a phrase has three nouns in a row, say it as a verb.
+- **Long words with short ones available.** *sends* not *propagates*, *stops* not *precludes*,
+  *empty* not *vacuous*, *so* not *consequently*, *and* not *in addition*.
+- **Insider shorthand.** "the chip rolls away", "the tier goes advisory", "it fails open" — precise
+  to you, empty to a reader. Say what happens: *the filter disappears*, *the job stops blocking*,
+  *a broken input is treated as clean*.
+- **Explaining the whole trace.** Three functions in a row means you are re-deriving your own
+  investigation. Name where it starts; the reviewer has the code.
+
+**What simplifying never touches.** Numbers, file paths, line ranges, quoted identifiers and the
+claim itself stay exact. Plain is about the words, not the certainty — "something may be off with
+the dropdown" is a worse finding than the dense version, not a simpler one. Keep no praise, no
+"successfully", verbs over adjectives, and every sentence either tells the reviewer what to look at
+or why.
+
+The same rule runs through the whole report, with a length that suits each field:
+
+| field | shape |
+|---|---|
+| `title` | the falsifiable claim, ≤ 80 chars, at most 2 symbols. Here a symbol may lead: "`retry()` now swallows `AbortError`". |
+| `what` | plain first, then mechanism. ≤ 2 sentences, ≤ 300 chars, ≤ 2 symbols, no symbol in sentence one. |
+| `verify` | ONE question answerable by looking. Not its justification. |
+| `why_human` | one sentence: what only a person can settle — intent, judgement, domain, irreversibility. |
+| phase `narrative` | what the phase does, in a stranger's words, then the files. 1–3 sentences. |
+| `summary` | what a person can now do and the rule that decides it (report-schema.md). |
 
 ## 8. The DB schema package
 

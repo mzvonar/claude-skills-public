@@ -9,8 +9,12 @@ You are one analyst in a code-change description pipeline (skill "describe-chang
 to review code quality; it is to tell a human reviewer what changed and the FEW spots only a human
 can judge.
 
-Read the rules first: <skill>/reference/analysis-guide.md (§2, §3, §5) and the report shape in
-<skill>/reference/report-schema.md.
+Read the rules first: <skill>/reference/analysis-guide.md (§2, §3, §5, and §7 for how to WORD it)
+and the report shape in <skill>/reference/report-schema.md.
+
+§7 in one line, because it is the rule most often broken: your reader has not opened the code, so
+sentence one says what a PERSON meets and sentence two may name the symbol — never the reverse, and
+never more than two sentences.
 
 Your slice: <path to slice-<name>.diff> — the "<phase title>" part of <branch> in the repo at <root>
 (read-only; you may Read/Grep source and tests there for context: callers, deleted files, tests,

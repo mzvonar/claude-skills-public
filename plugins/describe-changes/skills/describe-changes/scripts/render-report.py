@@ -12,7 +12,8 @@ import importlib.util
 import snapshots
 from highlight import language_for, scan, OPEN_NONE
 from report_keys import (check_key, finding_key, thread_turns, thread_is_open,
-                         note_group_key, note_thread_id, check_group_key, check_thread_id)
+                         note_group_key, note_thread_id, check_group_key, check_thread_id,
+                         displayed_paths)
 _spec = importlib.util.spec_from_file_location("classify_diff", os.path.join(os.path.dirname(os.path.abspath(__file__)), "classify-diff.py"))
 classify_diff = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(classify_diff)
 
@@ -1040,7 +1041,7 @@ def main():
         b.extend(finding_card(f, hunks, (card_notes.get(finding_key(f)) or {}).get("text"), known_paths) for f in findings)
         b.append("</div>")
     else:
-        b.append('<div class="empty">Nothing flagged. That is a claim, not a guarantee — the "Everything else" list below is what was looked at.</div>')
+        b.append('<div class="empty">Nothing flagged. That is a claim, not a guarantee — every file this change touched is either listed under a phase above or in "Everything else" below.</div>')
     b.append("</section>")
 
     # Straight after the findings: the reader has just read them, and this says which ones the author
@@ -1167,15 +1168,17 @@ def main():
                  + '</div>')
     b.append('</div>' + ('<div class="empty" id="threads-empty">No comments yet. Select a word or sentence anywhere above and tap <b>Ask about this</b>, or tap the line number beside any line of code.</div>' if not threads else '') + '</section>')
 
-    # The remainder is the COMPLEMENT of the findings, so a flagged file never appears here and no
-    # stub is needed. The trap: a finding names ONE file, but the DB package owns a headline AND its
-    # sidecar migrations, so the exclusion set must carry the sidecar too — or every migration
-    # renders twice, which is the duplication the package exists to remove. Keyed on the report's
-    # db_package rather than the model's db block: the report is what the reader sees.
-    flagged_files = {f["file"] for f in findings} | {
-        mg["path"] for f in findings for mg in ((f.get("db_package") or {}).get("migrations") or []) if mg.get("path")
-    }
-    rest = [f for f in model["files"] if f["substantive_hunks"] and f["path"] not in flagged_files]
+    # The remainder is the COMPLEMENT of everything shown above, so no file renders twice. It was
+    # the complement of the FINDINGS alone until 1.26.0, which put every phase file in both places:
+    # measured on a real report, 14 of the 24 rows here were already listed under "How it was built",
+    # and a reader who has just opened one from a phase card meets it again as unsurfaced.
+    #
+    # The exclusion is keyed on "does a control above OPEN this path", which is exactly what makes
+    # the removal safe: `fpath` (phases) and `fchip` (views) both open the same file store these rows
+    # do, so nothing becomes unreachable. Map nodes are NOT excluded — `map_list` prints a node's
+    # file as plain text, so the map displays a symbol, never an openable file.
+    displayed = displayed_paths(report)
+    rest = [f for f in model["files"] if f["substantive_hunks"] and f["path"] not in displayed]
     # Four registers, code FIRST: the reader skims this list for what might still matter, and a
     # changed function deserves that glance more than a changed skill file or a doc. Tests are a
     # bucket of their own because "did they test it?" is the commonest question asked of this list,
@@ -1184,8 +1187,10 @@ def main():
     AREAS = (("code", "Code"), ("tests", "Tests"), ("tooling", "Tooling"), ("docs", "Docs"))
     by_area = {k: [f for f in rest if (f.get("area") or "code") == k] for k, _ in AREAS}
     area_counts = " · ".join(f'{len(by_area[k])} {lbl.lower()}' for k, lbl in AREAS if by_area[k] or k == "tests")
-    b.append(f'<section id="unreviewed"><h2>Everything else that changed <span class="cnt">{len(rest)} files, nothing flagged{(" — " + area_counts) if rest else ""}</span></h2><div class="unrev">')
-    b.append('<div class="empty">Substantive but not surfaced. Fresh eyes welcome — ⚑ raises a gut-flag for Claude to dig into.</div>' + STATUS_LEGEND)
+    # "not shown above", not "nothing flagged": since 1.26.0 a phase file and a charted file are out
+    # of this list too, so the old count described a set the section no longer holds.
+    b.append(f'<section id="unreviewed"><h2>Everything else that changed <span class="cnt">{len(rest)} files, not shown above{(" — " + area_counts) if rest else ""}</span></h2><div class="unrev">')
+    b.append('<div class="empty">Substantive, and in no section above. Fresh eyes welcome — ⚑ raises a gut-flag for Claude to dig into.</div>' + STATUS_LEGEND)
     # One store of per-file changed code (substantive hunks, capped) — read lazily by the
     # "Everything else" rows and by every ⟨/⟩ file chip in the views.
     MAX_LINES = 400
