@@ -1,6 +1,6 @@
 ---
 name: describe-changes
-version: "1.26.0"
+version: "1.26.1"
 description: >
   Present an implemented change to a human reviewer the way a human needs it: what was done and why,
   a visual map of the high-level change (who calls whom, where data flows, what moved/split/renamed),
@@ -295,6 +295,13 @@ worktree are never touched). Findings and checks are the current report's, filte
 they keep `file`/`lines` but lose `hunks`, because a hunk id belongs to the model it was computed
 in. When the range cannot be built — a snapshot older than tree refs, or no code moved — the page
 falls back to the delta's cards alone, and still names what moved.
+
+Its summary **leads with what was done, then how much**: the commit subjects since that reading
+(merges dropped, conventional-commit prefixes stripped, four shown and the rest counted as "+N
+more"), and only then the file and finding counts. A returning reader opens a delta asking what
+happened while they were away, and "5 commits, 12 files" is the SIZE of that answer rather than the
+answer — the subjects are the only authored prose a delta has, so they go first. A delta with no
+commits behind it (uncommitted work only) shows the counts alone rather than an invented sentence.
 
 ```bash
 python3 "$S/snapshots.py" list --dir "$OUT"                      # what versions exist

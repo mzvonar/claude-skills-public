@@ -160,6 +160,38 @@ def tree_commit(root, slug, seq, exclude=()):
         try: os.remove(idx)
         except OSError: pass
 
+# A conventional-commit prefix, stripped for prose. The TYPE survives as a word where it carries
+# meaning a reader acts on ("fix", "revert"); the scope is the author's filing system, not the
+# reader's, and `feat(pd-t09):` in a sentence is noise the reader has to skip past.
+_CC_PREFIX = re.compile(
+    r"^(?P<type>build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)"
+    r"(?:\([^)]*\))?(?P<breaking>!)?:\s*")
+
+def commit_subjects(commits, limit=4):
+    """What the commits SAY they did, as prose — the only authored words a delta page has.
+
+    Counts answer how much moved; this answers what. Merges are dropped rather than summarised:
+    "Merge branch 'main'" is not a description of work, and on a branch that absorbs its base often
+    it is most of the list.
+
+    Returns ([subject, …], dropped_count) so the caller can say "+N more" rather than silently
+    truncating — a delta that showed four of eleven commits and said so is honest; one that showed
+    four and implied four is not.
+    """
+    subjects = []
+    for line in commits:
+        subject = line.split(" ", 1)[1].strip() if " " in line else line.strip()
+        if not subject or subject.startswith("Merge "):
+            continue
+        match = _CC_PREFIX.match(subject)
+        if match:
+            rest = subject[match.end():].strip()
+            # A breaking change keeps its marker; nothing else earns a word here.
+            subject = f"breaking: {rest}" if match.group("breaking") else rest
+        if subject:
+            subjects.append(subject[0].upper() + subject[1:])
+    return subjects[:limit], max(0, len(subjects) - limit)
+
 def _commits_between(root, a_sha, b_sha):
     if not root or not a_sha or not b_sha or a_sha == b_sha:
         return []
@@ -325,11 +357,21 @@ def build_code_delta(d, snap, report, dl):
     bits.append(f"{st.get('files_substantive', len(files))} file{'s' if st.get('files_substantive', 1) != 1 else ''} with substantive changes")
     if dl["findings_resolved"]: bits.append(f"{len(dl['findings_resolved'])} finding{'s' if len(dl['findings_resolved']) != 1 else ''} resolved")
     if dl["findings_added"]: bits.append(f"{len(dl['findings_added'])} new")
+
+    # WHAT moved, before HOW MUCH. A returning reader opens this page asking "what happened while I
+    # was away", and "5 commits, 12 files" does not answer it — it is the size of the answer. The
+    # commit subjects are the only authored prose a delta has, so they lead; the counts follow as
+    # scale. Where there are no subjects (an uncommitted-only delta) the counts stand alone, which is
+    # the honest fallback rather than an invented sentence.
+    subjects, more = commit_subjects(dl["commits"])
+    done = "; ".join(subjects) + (f"; +{more} more" if more else "") if subjects else ""
+    moved = ("This page is the code that moved since that reading: " + ", ".join(bits) + ". ") if bits else ""
     delta_report = {
         "title": f"{report.get('title', 'Changes')} — since {label}",
         "intent": f"Only what changed since {label}. The whole change is in the full report.",
-        "summary": "This page is the code that moved since that reading: " + ", ".join(bits)
-                   + ". Findings and checks are the ones that concern it; everything settled before "
+        "summary": (f"What was done since {label}: {done}. " if done else "")
+                   + moved
+                   + "Findings and checks are the ones that concern it; everything settled before "
                      "that reading is deliberately absent.",
         "phases": phases,
         "graph": {"narrative": (graph.get("narrative") or "") and f"{graph['narrative']} (scoped to what changed since {label})",

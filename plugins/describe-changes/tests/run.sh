@@ -1595,5 +1595,7 @@ bash "$HERE/db-package.sh" || fail "db-package suite"
 bash "$HERE/scope.sh" || fail "scope suite"
 # The render-time syntax lexer: round trip, state across lines, escaping, graceful fallback.
 bash "$HERE/highlight.sh" || fail "highlight suite"
+# A delta page's summary: what was done before how much, and what it refuses to quote.
+bash "$HERE/delta-summary.sh" || fail "delta-summary suite"
 
 echo "ALL TESTS PASSED"
