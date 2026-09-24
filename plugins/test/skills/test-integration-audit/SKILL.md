@@ -118,7 +118,11 @@ URL destroys real state, not just numbers.
    - `notesFile` — optional markdown file of richer project specifics, shared
      with the sibling audit skills (see "Project notes file" in
      /test:test-unit-audit — same contract: read in full before any command;
-     update it when discovery contradicts it).
+     update it when discovery contradicts it). If the notes file or the
+     config exists only as UNCOMMITTED state in another checkout/worktree,
+     ASK the user before copying it in — it is another session's working
+     state, not yours to take; once copied with consent, commit it with the
+     audit's setup so no future run repeats this.
 2. **Confirm with the user** before writing — especially `fullSuiteCommand`
    (wrapped vs bare) and `dbName`. Never pick between plausible arbiters
    silently, and never guess a database name.
@@ -166,7 +170,11 @@ URL destroys real state, not just numbers.
   run the coverage command before and after with BOTH `json-summary` and
   `lcov` reporters; the summary diff finds a regressed file, the lcov pair
   names the exact lines. Reading both tests is still required to fold unique
-  assertions into a survivor — coverage proves lines, not assertions.
+  assertions into a survivor — coverage proves lines, not assertions. One
+  accepted-delta class exists: a test-seam injection (e.g. a real sleeper
+  default the tests now bypass) legitimately un-covers its trivial real
+  implementation — a 1–2 line, mechanism-explained delta gets documented in
+  the benchmark doc and accepted, not "fixed".
 - **One-shot mode always**, and **read result counters by grepping the whole
   log** — never a fixed-size tail; a red run can read green from its last
   lines.
@@ -187,8 +195,16 @@ URL destroys real state, not just numbers.
   DB-tuning change that measures WORSE gets reverted with the measurement
   written beside the setting — otherwise the next audit re-runs the
   experiment.
-- **Commits only when the user explicitly asks.** One commit per bucket,
-  message carrying the measured delta.
+- **Commits: settle the policy at audit start, then commit per bucket at
+  bucket close.** Before Phase 0, ask the user whether you may commit each
+  bucket as it lands — explicitly, and especially where repo policy
+  otherwise bans agent commits; never commit unasked. When authorized,
+  commit AT BUCKET CLOSE (bucket edits + benchmark doc together), message
+  carrying the measured delta. Do not defer all commits to the end: buckets
+  legitimately overlap on files (surgery, then a merge, then a repair in
+  the same file), git stages whole files, and renames compound it — an
+  end-of-audit split cannot produce honest per-bucket history (measured:
+  four deferred commits all needed overlap disclaimers).
 
 ## Phase 0 — Recon + two-sided profile (orchestrator)
 
@@ -398,6 +414,13 @@ not be re-run).
   DB-side deltas honestly. Derive `noiseFloorPct` from the spread and write
   it into the config — expect it to be worse than the unit tier's (a real
   database breathes: autovacuum, checkpoints, page cache).
+- **Baseline the receiving lanes too when tier moves look likely** — Phase
+  0's inventory usually already says so (the first field run had 56
+  candidates). One timed run each of the unit (and any scripts/etc.)
+  projects NOW, pre-move: Phase 5's relocated-vs-saved split needs their
+  "before", and it cannot be reconstructed after the moves land (measured:
+  the field audit had to borrow a month-old benchmark from another
+  worktree).
 - Coverage baseline in the same pass (json-summary + lcov), preserved under a
   dated name — reconstructing a pre-tree lcov later costs several scoped
   re-runs (measured at the unit tier).
@@ -422,9 +445,13 @@ not be re-run).
   incident: one agent's stash/pop reverted three agents' finished edits);
   **never run DB setup, reset, or compose commands** — the orchestrator owns
   the database; scoped verification runs go ONLY through the sanctioned
-  lock-wrapped command (they queue behind each other — budget for it, and
-  prefer batching several owned files into one run), and never during a
-  benchmark; no shared-file edits; no commits; read files fully before
+  lock-wrapped command (they queue behind each other, and each pays the
+  per-run global-setup tax) — ONE batched run of all owned files, a budget
+  of two runs total, and never during a benchmark. Verification is
+  GREEN-ONLY: agents must not claim per-file timings — the default reporter
+  prints no per-file lines in non-TTY runs (three field agents burned their
+  run budget discovering this), and all before/after attribution comes from
+  the orchestrator's JSON-reporter full runs; no shared-file edits; no commits; read files fully before
   editing; after deletions grep for dangling imports, orphaned fixture
   helpers, and seed rows now referenced by nothing.
 - **Premise corrections are a deliverable.** Executors verify each finding's
@@ -486,6 +513,27 @@ not be re-run).
   PRODUCT's — a delta-form rewrite is often the first thing ever to actually
   check the write happened — file it to the deferred-work ledger with an ID,
   keep the rest strict, and point the test's comment at the ID.
+
+## Phase 6 — Wrap up (orchestrator)
+
+The audit is not done when the last benchmark is green:
+
+- **Ledger dispositions.** Close every pre-existing deferred-work item the
+  audit fixed (append a resolution note saying what landed and where); file
+  every finding it deliberately did NOT fix — unrunnable suites, stale
+  skips awaiting infrastructure, product recommendations — with an ID, and
+  point the affected test's comment at that ID.
+- **notesFile.** Append a History entry (branch, docs produced, headline
+  numbers, what was deferred and why) and new Lessons; correct anything the
+  audit proved wrong. This is the durable memory the next audit starts from.
+- **Config write-back.** `noiseFloorPct`, any command that changed, and
+  pointers to rejected experiments so nobody re-runs them blind.
+- **Cross-links.** Each benchmark doc links its predecessor; the audit doc
+  gains an implementation-status footer stating what landed and what didn't.
+- **Commits/push per the policy agreed at the start.** If per-bucket
+  commits were not authorized, state exactly what is uncommitted and offer
+  the commits — do not leave the user to discover a 100-file working tree.
+- **Session memory / handoff notes**, if the environment keeps them.
 
 ## Recurring integration-tier mechanisms worth checking in any audit
 

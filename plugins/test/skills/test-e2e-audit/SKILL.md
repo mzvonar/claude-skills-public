@@ -95,7 +95,11 @@ shared boxes, "never run X while Y"), **Suite map** (which suites exist, which
 CI runs, which are manual-only), **Known quirks** (env pinning, worktree
 gotchas), **History** (past audits and their docs). During an audit, when a
 discovered fact contradicts the file, tell the user and update the file — it is
-the durable memory the next audit starts from.
+the durable memory the next audit starts from. If the notes file or the skill
+config exists only as UNCOMMITTED state in another checkout/worktree, ASK the
+user before copying it in — it is another session's working state, not yours to
+take; once copied with consent, commit it with the audit's setup so no future
+run repeats this.
 
 ## Non-negotiables
 
@@ -108,8 +112,15 @@ the durable memory the next audit starts from.
   signature?).
 - **Zero coverage loss.** Delete a test only after folding its unique assertions
   into a survivor — verified by reading both tests, never by comparing titles.
-- **Commits only when the user explicitly asks.** One commit per bucket, message
-  carrying the measured delta.
+- **Commits: settle the policy at audit start, then commit per bucket at
+  bucket close.** Before Phase 0, ask the user whether you may commit each
+  bucket as it lands — explicitly, and especially where repo policy
+  otherwise bans agent commits; never commit unasked. When authorized,
+  commit AT BUCKET CLOSE (bucket edits + benchmark doc together), message
+  carrying the measured delta. Do not defer all commits to the end: buckets
+  overlap on files and git stages whole files — an end-of-audit split
+  cannot produce honest per-bucket history (measured on the integration
+  tier: four deferred commits all needed overlap disclaimers).
 - If the project serializes test runs machine-wide (a lock script, a shared test
   DB), respect it — never run two suites concurrently.
 - **A measuring run owns the whole box, not just the lock.** While a benchmark or
@@ -214,6 +225,10 @@ asserts, load-bearing reloads) — so later passes don't "optimize" them away.
   read results off a fixed-size tail; the failure line prints first.
 - Triage every failure against the flake ledger BEFORE calling the baseline valid;
   preserve the log with a dated name.
+- **Baseline the receiving lane too when bucket 5 (wrong tier) looks likely**:
+  one timed run of the unit/component suite NOW, pre-move — a relocation
+  reported as savings needs the receiving lane's before/after, and the
+  "before" cannot be reconstructed once the moves land.
 - Record in the audit doc: wall clock, reported suite duration, pass/fail/skip,
   collected test count, and the delta rule ("compare suite duration; build time is
   a constant; a run is comparable only if its failure set stays within the ledger").
@@ -282,6 +297,28 @@ asserts, load-bearing reloads) — so later passes don't "optimize" them away.
   flake ledger / deferred-work with an ID, exclude the SPECIFIC failing rule or
   assert (never the whole test), keep everything else strict, and point the test's
   title or comment at the ID so re-enabling is findable when the product fix lands.
+
+## Phase 6 — Wrap up (orchestrator)
+
+The audit is not done when the last benchmark is green:
+
+- **Ledger dispositions.** Close every flake-ledger / deferred-work item the
+  audit fixed (append a resolution note); file every finding it deliberately
+  did NOT fix — product defects surfaced by honest tests, quarantined rules,
+  recommendations — with an ID, and point the affected test's title or
+  comment at that ID.
+- **notesFile.** Append a History entry (branch, docs produced, headline
+  numbers, what was deferred and why) and new Lessons; correct anything the
+  audit proved wrong. This is the durable memory the next audit starts from.
+- **Config write-back.** `noiseFloorPct`, `flakeLedger` if Phase 3 created
+  one, any command that changed, and pointers to rejected experiments (a
+  reverted worker bump) so nobody re-runs them blind.
+- **Cross-links.** Each benchmark doc links its predecessor; the audit doc
+  gains an implementation-status footer stating what landed and what didn't.
+- **Commits/push per the policy agreed at the start.** If per-bucket
+  commits were not authorized, state exactly what is uncommitted and offer
+  the commits — do not leave the user to discover a 100-file working tree.
+- **Session memory / handoff notes**, if the environment keeps them.
 
 ## Recurring mechanisms worth checking in any audit
 

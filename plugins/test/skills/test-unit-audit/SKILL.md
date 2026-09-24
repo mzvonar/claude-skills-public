@@ -125,7 +125,11 @@ shared boxes, "never run X while Y"), **Suite map** (which suites/projects
 exist, which CI runs, which are manual-only), **Known quirks** (env pinning,
 worktree gotchas), **History** (past audits and their docs). During an audit,
 when a discovered fact contradicts the file, tell the user and update the file —
-it is the durable memory the next audit starts from.
+it is the durable memory the next audit starts from. If the notes file or the
+skill config exists only as UNCOMMITTED state in another checkout/worktree,
+ASK the user before copying it in — it is another session's working state, not
+yours to take; once copied with consent, commit it with the audit's setup so
+no future run repeats this.
 
 ## Non-negotiables
 
@@ -141,7 +145,11 @@ it is the durable memory the next audit starts from.
   diff must show no line previously covered going uncovered (a `diff` of the
   two coverage summaries per touched
   source file is enough). Reading both tests is still required to fold unique
-  assertions into a survivor — coverage proves lines, not assertions.
+  assertions into a survivor — coverage proves lines, not assertions. One
+  accepted-delta class exists: a test-seam injection (e.g. a real sleeper or
+  clock default the tests now bypass) legitimately un-covers its trivial
+  real implementation — a 1–2 line, mechanism-explained delta gets
+  documented in the benchmark doc and accepted, not "fixed".
 - **One-shot mode always.** Every scripted run uses the runner's non-watch form
   and is checked for actual exit; a watcher mistaken for a run poisons every
   wall-clock number after it.
@@ -155,8 +163,16 @@ it is the durable memory the next audit starts from.
   that measures WORSE gets reverted and the measurement written into a comment
   beside the setting — otherwise the next audit re-flags it and re-runs the
   experiment.
-- **Commits only when the user explicitly asks.** One commit per bucket,
-  message carrying the measured delta.
+- **Commits: settle the policy at audit start, then commit per bucket at
+  bucket close.** Before Phase 0, ask the user whether you may commit each
+  bucket as it lands — explicitly, and especially where repo policy
+  otherwise bans agent commits; never commit unasked. When authorized,
+  commit AT BUCKET CLOSE (bucket edits + benchmark doc together), message
+  carrying the measured delta. Do not defer all commits to the end: buckets
+  overlap on files, git stages whole files, and renames compound it — an
+  end-of-audit split cannot produce honest per-bucket history (measured on
+  the integration tier: four deferred commits all needed overlap
+  disclaimers).
 
 ## Phase 0 — Recon + timing profile (orchestrator)
 
@@ -303,6 +319,11 @@ snapshots that are the sanctioned contract format for a serializer.
   AND its phase breakdown (transform/setup/collect/tests/environment),
   pass/fail/skip/todo counts, collected test count. Derive `noiseFloorPct`
   from the spread and write it into the config.
+- **Baseline the receiving lanes too when tier moves look likely** (Phase 0's
+  inventory usually says so): one timed run of each project/suite that
+  bucket-3 moves would land in, taken NOW, pre-move — Phase 5's
+  relocated-vs-saved split needs their "before", and it cannot be
+  reconstructed after the moves land.
 - Triage every failure and every "obsolete snapshot" warning BEFORE calling
   the baseline valid; preserve logs under dated names. A pre-existing failure
   becomes a bucket-4 row, not a silent baseline feature.
@@ -329,7 +350,11 @@ snapshots that are the sanctioned contract format for a serializer.
   because the pop happened to conflict); no full-suite runs (an agent MAY run
   only the specific files it owns — unit tier makes that cheap and it beats
   collect-only for catching behavioral breakage — but never during a
-  benchmark); no shared-file edits; no commits; read files fully before
+  benchmark; ONE batched run of all owned files, budget two runs total, and
+  GREEN-ONLY: agents must not claim per-file timings — the default reporter
+  prints no per-file lines in non-TTY runs, and all before/after attribution
+  comes from the orchestrator's timing-reporter full runs); no shared-file
+  edits; no commits; read files fully before
   editing; after deletions grep for dangling imports, orphaned factories and
   fixtures, and stale snapshot files (`.snap` orphans linger after their test
   dies — delete them with the test).
@@ -386,6 +411,27 @@ snapshots that are the sanctioned contract format for a serializer.
   rewritten assertion is simply the first thing ever to actually look — file
   it to the repo's deferred-work/issue ledger with an ID, keep the rest of the
   test strict, and point the test's comment at the ID.
+
+## Phase 6 — Wrap up (orchestrator)
+
+The audit is not done when the last benchmark is green:
+
+- **Ledger dispositions.** Close every pre-existing deferred-work item the
+  audit fixed (append a resolution note saying what landed and where); file
+  every finding it deliberately did NOT fix — product defects surfaced by
+  honest tests, stale skips awaiting infrastructure, recommendations — with
+  an ID, and point the affected test's comment at that ID.
+- **notesFile.** Append a History entry (branch, docs produced, headline
+  numbers, what was deferred and why) and new Lessons; correct anything the
+  audit proved wrong. This is the durable memory the next audit starts from.
+- **Config write-back.** `noiseFloorPct`, any command that changed, and
+  pointers to rejected experiments so nobody re-runs them blind.
+- **Cross-links.** Each benchmark doc links its predecessor; the audit doc
+  gains an implementation-status footer stating what landed and what didn't.
+- **Commits/push per the policy agreed at the start.** If per-bucket
+  commits were not authorized, state exactly what is uncommitted and offer
+  the commits — do not leave the user to discover a 100-file working tree.
+- **Session memory / handoff notes**, if the environment keeps them.
 
 ## Recurring unit-tier mechanisms worth checking in any audit
 
