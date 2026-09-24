@@ -325,10 +325,25 @@ button.fpath:active{border-color:var(--info)}
 .empty{color:var(--fg3);font-size:.9rem;padding:.5rem 0}
 /* A file whose every hunk was folded still opens to its diff — the banner says why it was not
    worth your attention, and the code below it lets you disagree. Sticky, because the reason has to
-   survive scrolling through the thing it is a caveat about. */
-.foldnote{position:sticky;top:0;z-index:2;background:rgba(113,128,150,.14);border-left:3px solid var(--fg3);
-  color:var(--fg2);font-size:.82rem;padding:.45rem .6rem;margin:0 0 .5rem;border-radius:0 4px 4px 0}
-.foldnote b{color:var(--fg);font-weight:600}
+   survive scrolling through the thing it is a caveat about.
+   AMBER, not grey: grey is this page's colour for de-emphasis, so a grey caveat drawn above grey
+   context lines was read straight past — reported as "not visible". `--med` is the same amber an
+   open thread uses, which is the register this is in (something is pending your judgement); the
+   blue of --info would have collided with the comment marks in the gutter right beneath it. */
+.foldnote{position:sticky;top:0;z-index:2;background:rgba(246,173,85,.12);border-left:3px solid var(--med);
+  color:var(--fg);font-size:.84rem;padding:.55rem .7rem;margin:0 0 .5rem;border-radius:0 4px 4px 0}
+.foldnote b{color:var(--med);font-weight:700}
+/* The code is collapsed behind this, not deleted: the whole claim is that it is not worth the
+   reader's attention, so opening the file should not answer with a screen of it. The summary is
+   the disagree button. */
+.foldcode{margin:0}
+.foldcode>summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:.4rem;
+  font-size:.78rem;font-weight:600;color:var(--fg2);background:var(--bg2);border:1px solid var(--line2);
+  border-radius:999px;padding:.3rem .75rem;margin-bottom:.5rem}
+.foldcode>summary::-webkit-details-marker{display:none}
+.foldcode>summary::before{content:"▸";color:var(--med);font-weight:700}
+.foldcode[open]>summary::before{content:"▾"}
+.foldcode>summary:hover{color:var(--fg);border-color:var(--med)}
 /* Both sit ABOVE the file sheet (51). Most code in this report is read inside that sheet, so a
    popup underneath it means a comment started on a diff cannot be typed or sent — the button
    appears, the popup opens behind the sheet, and the reader is left tapping a dead panel.
@@ -340,6 +355,17 @@ button.fpath:active{border-color:var(--info)}
 .ask-pop.show{display:block}
 @media(min-width:700px){.ask-pop{left:50%;right:auto;bottom:4rem;transform:translateX(-50%);width:560px;border:1px solid var(--line2);border-radius:var(--radius)}}
 .ask-pop .q{font-family:var(--mono);font-size:.8rem;color:var(--info);background:rgba(99,179,237,.08);border-left:3px solid var(--info);padding:.35rem .6rem;margin-bottom:.6rem;word-break:break-word;max-height:4.5rem;overflow:auto;overscroll-behavior:contain}
+/* What is ALREADY on the line you tapped. The gutter mark (has-c) says a comment is there, which
+   invites exactly one question — "what did I say?" — and until this the popup answered it by
+   offering a blank box, so the only way to read your own note was to leave the diff for
+   Conversation and find it by eye. Read-only here on purpose: replying belongs to the thread,
+   which the ⧉ button opens. */
+.ask-pop .prev{display:none;margin-bottom:.6rem;max-height:9rem;overflow:auto;overscroll-behavior:contain}
+.ask-pop .prev.show{display:block}
+.ask-pop .prev .pv{border-left:3px solid var(--med);background:rgba(246,173,85,.07);padding:.35rem .6rem;margin-bottom:.35rem;border-radius:0 4px 4px 0}
+.ask-pop .prev .pv p{margin:0 0 .25rem;font-size:.84rem;color:var(--fg);white-space:pre-wrap;word-break:break-word}
+.ask-pop .prev .pv .who{font-size:.68rem;font-weight:700;color:var(--fg3);text-transform:uppercase;letter-spacing:.04em}
+.ask-pop .prev .pv .go{font:inherit;font-size:.72rem;padding:.2rem .5rem;border-radius:999px;border:1px solid var(--line2);background:var(--bg);color:var(--fg2);cursor:pointer}
 .ask-pop .chips{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.6rem}
 .ask-pop .chips button{font:inherit;font-size:.75rem;padding:.35rem .6rem;border-radius:999px;border:1px solid var(--line2);background:var(--bg);color:var(--fg2);cursor:pointer}
 .ask-pop textarea{width:100%;font:inherit;font-size:.9rem;background:var(--bg);color:var(--fg);border:1px solid var(--line2);border-radius:8px;padding:.55rem .7rem;min-height:64px;resize:vertical}
@@ -466,6 +492,7 @@ __BODY__
 </div>
 <button class="ask-btn" id="ask-btn">💬 Ask about this</button>
 <div class="ask-pop" id="ask-pop"><div class="q" id="ask-q"></div>
+<div class="prev" id="ask-prev"></div>
 <div class="chips"><button data-q="What does this do, and how?">What does this do?</button><button data-q="Where is this used, and by whom?">Where is it used?</button><button data-q="Why was it done this way? What were the alternatives?">Why this way?</button><button data-q="Is this covered by tests? Which?">Tested?</button><button data-q="This looks wrong / risky — dig into it.">Looks off ⚑</button></div>
 <textarea id="ask-text" placeholder="Your question or comment for Claude…"></textarea>
 <div class="row"><button class="btn" id="ask-cancel">Cancel</button><button class="btn primary" id="ask-send">Send to Claude</button></div></div>
@@ -709,16 +736,37 @@ __BODY__
     NAV.at = at;
     showFile(NAV.files[at]);
   };
-  const closeSheet = () => { sheet.classList.remove('show'); sheetBg.classList.remove('show'); unlockPage(); };
+  // Closing the sheet closes what was ANCHORED INSIDE it: the ask popup belongs to one line of
+  // this diff and the floating ask button to a selection in it, so both are left pointing at a
+  // file the reader just dismissed — the popup worst of all, since it sits over the report
+  // offering a comment box for code no longer on screen. Every close path goes through here (the
+  // ✕, the backdrop, Escape), so this is the one place it belongs.
+  // getElementById rather than the `pop`/`askBtn` consts: those are declared far below this line,
+  // and an Escape arriving before the script reaches them would hit their temporal dead zone.
+  const closeSheet = () => {
+    sheet.classList.remove('show'); sheetBg.classList.remove('show'); unlockPage();
+    document.getElementById('ask-pop')?.classList.remove('show');
+    document.getElementById('ask-btn')?.classList.remove('show');
+  };
   // Delegated on [data-open], not on a class: every file reference anywhere in the report — view
   // chips, phase paths, the uncommitted list — opens that file's changes, and anything added later
   // inherits it by carrying the attribute.
   let HUNKS = {}; try { HUNKS = JSON.parse(document.getElementById('hunk-store').textContent); } catch(e) {}
-  const openHunks = (ids, label) => {
+  const openHunks = (ids, label, kind) => {
     const html = ids.split(',').map(id => HUNKS[id] || '').join('');
     setTitle($('#sheet-t'), label, ' · folded change'); delete $('#sheet-t').dataset.st;
     NAV = null; renderNav();
-    $('#sheet-b').innerHTML = html || '<div class="empty">this hunk was not captured</div>';
+    // The SAME banner-then-disclosure a folded-only file gets from render-report.py. This is the
+    // other way into folded code — the fold card's own file buttons — and it used to open straight
+    // onto the hunks with nothing saying they were the fold. A notice present on one path and
+    // absent on the other is indistinguishable, to the reader who took the other path, from no
+    // notice at all; that is how it was reported.
+    const note = '<div class="foldnote"><b>Folded as noise' + (kind ? ': ' + esc(kind) : '') + '.</b>'
+      + ' These are the folded hunks only — the rest of this file is not shown, and none of it is'
+      + ' counted in the report above.</div>';
+    $('#sheet-b').innerHTML = html
+      ? note + '<details class="foldcode"><summary>Expand code — judge the fold yourself</summary>' + html + '</details>'
+      : '<div class="empty">this hunk was not captured</div>';
     afterCode($('#sheet-b'));
     showSheet();
     $('#sheet-b').scrollTop = 0;
@@ -727,7 +775,7 @@ __BODY__
     // Folded hunks win over the whole-file view: inside a fold card the reader asked about THAT
     // change, not everything else the file happens to contain.
     const fh = ev.target.closest('[data-open-hunks]');
-    if (fh) { ev.preventDefault(); ev.stopPropagation(); openHunks(fh.dataset.openHunks, fh.dataset.openLabel || ''); return; }
+    if (fh) { ev.preventDefault(); ev.stopPropagation(); openHunks(fh.dataset.openHunks, fh.dataset.openLabel || '', fh.dataset.openKind || ''); return; }
     const c = ev.target.closest('[data-open]');
     if (c) { ev.preventDefault(); ev.stopPropagation(); openSheet(c.dataset.open, c); }
   });
@@ -1102,7 +1150,9 @@ __BODY__
   }
   document.addEventListener('selectionchange', () => { clearTimeout(onSel._t); onSel._t = setTimeout(onSel, 250); });
   askBtn.addEventListener('mousedown', ev => ev.preventDefault());
-  askBtn.onclick = () => { if (!sel) return; $('#ask-q').textContent = '“' + sel.text + '”'; askText.value = ''; pop.classList.add('show'); askBtn.classList.remove('show'); setTimeout(() => askText.focus(), 50); };
+  // showPrev(null) clears it: this popup is shared with the per-line path, and a prose selection
+  // that inherited the last line's threads would attribute them to text they were never about.
+  askBtn.onclick = () => { if (!sel) return; $('#ask-q').textContent = '“' + sel.text + '”'; showPrev(null); askText.value = ''; pop.classList.add('show'); askBtn.classList.remove('show'); setTimeout(() => askText.focus(), 50); };
   $$('.ask-pop .chips button').forEach(b => b.onclick = () => { askText.value = (askText.value ? askText.value + ' ' : '') + b.dataset.q; askText.focus(); });
   $('#ask-cancel').onclick = () => pop.classList.remove('show');
   const threadsEl = $('#threads');
@@ -1123,7 +1173,7 @@ __BODY__
     const text = askText.value.trim(); if (!text || !sel) return;
     const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const e = event('comment', sel.finding, { id, text, anchor: sel });
-    renderThread(e); noteCommented(sel); markAnchor(e); pop.classList.remove('show'); window.getSelection()?.removeAllRanges();
+    renderThread(e); noteCommented(e); markAnchor(e); pop.classList.remove('show'); window.getSelection()?.removeAllRanges();
     // A comment written into a COLLAPSED Conversation would appear to vanish — the reader's own
     // words, swallowed by a section they shut earlier. Only on a NEW comment: doing it inside
     // `renderThread` also fired during the replay below, which re-opened the section on every load
@@ -1192,14 +1242,22 @@ __BODY__
              context: sibs.slice(Math.max(0, i - 2), i + 3).map(codeOf).join('\n'),
              section: sectionOf(el), finding: findingOf(el), finding_key: findingKeyOf(el) };
   };
-  const COMMENTED = new Set();
+  // Keyed by `file:line`, holding the THREADS themselves and not just the fact of them — the gutter
+  // mark needs only a boolean, but the reader who taps the mark wants what it marks, so the set
+  // that lights the gutter is also the one the popup reads from. A line can carry several.
+  const COMMENTED = new Map();
   const lineKey = a => a && a.file && a.line ? a.file + ':' + a.line : null;
   afterCode = root => {
     if (!COMMENTED.size) return;
     $$('.diff .l[data-f]', root).forEach(l => l.classList.toggle('has-c', COMMENTED.has(l.dataset.f + ':' + l.dataset.n)));
   };
-  const noteCommented = a => { const k = lineKey(a); if (!k) return; COMMENTED.add(k); afterCode(document); };
-  fb.filter(e => e.type === 'comment' && e.anchor).forEach(e => { const k = lineKey(e.anchor); if (k) COMMENTED.add(k); });
+  const addThread = e => {
+    const k = lineKey(e && e.anchor); if (!k) return null;
+    if (!COMMENTED.has(k)) COMMENTED.set(k, []);
+    COMMENTED.get(k).push(e); return k;
+  };
+  const noteCommented = e => { if (addThread(e)) afterCode(document); };
+  fb.filter(e => e.type === 'comment' && e.anchor).forEach(addThread);
 
   // ---- Marking commented prose ---------------------------------------------------------------
   // A comment on a diff line lights its gutter (has-c above); a comment on a sentence used to leave
@@ -1254,9 +1312,40 @@ __BODY__
   });
   fb.filter(e => e.type === 'comment' && e.id && e.anchor).forEach(markAnchor);
   afterCode(document);
+  // The existing threads on a line, rendered into the popup above the new-comment box. Text nodes,
+  // never innerHTML: every string here is reader-written and one of them is `c.text`.
+  const prevEl = $('#ask-prev');
+  const showPrev = key => {
+    if (!prevEl) return;
+    prevEl.textContent = ''; prevEl.classList.remove('show');
+    const threads = (key && COMMENTED.get(key)) || [];
+    if (!threads.length) return;
+    threads.forEach(c => {
+      const d = document.createElement('div'); d.className = 'pv';
+      const turn = (who, text) => {
+        const w = document.createElement('div'); w.className = 'who'; w.textContent = who;
+        const p = document.createElement('p'); p.textContent = text;
+        d.append(w, p);
+      };
+      turn('You commented', c.text);
+      fb.filter(x => x.type === 'reply' && x.thread === c.id && x.text)
+        .forEach(r => turn('You replied', r.text));
+      const go = document.createElement('button');
+      go.className = 'go'; go.type = 'button'; go.textContent = 'Open thread ⧉';
+      // Conversation lives on the page BEHIND the file sheet, so jumping there without closing the
+      // sheet scrolls something the reader cannot see.
+      go.onclick = () => {
+        closeSheet(); window.dcOpenSection?.('conversation');
+        document.getElementById('t-' + c.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      };
+      d.append(go); prevEl.append(d);
+    });
+    prevEl.classList.add('show');
+  };
   const openLineAsk = el => {
     sel = lineAnchor(el);
     $('#ask-q').textContent = sel.file + ':' + sel.line + ' — ' + sel.text;
+    showPrev(lineKey(sel));
     askText.value = ''; askBtn.classList.remove('show'); pop.classList.add('show');
     setTimeout(() => askText.focus(), 50);
   };

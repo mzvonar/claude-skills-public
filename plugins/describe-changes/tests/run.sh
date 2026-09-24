@@ -1599,5 +1599,7 @@ bash "$HERE/highlight.sh" || fail "highlight suite"
 bash "$HERE/delta-summary.sh" || fail "delta-summary suite"
 # A fully-folded file still opens to its diff, under a banner naming the fold.
 bash "$HERE/folded-file.sh" || fail "folded-file suite"
+# A line that already carries a comment can show it, not only take another.
+bash "$HERE/line-comment-view.sh" || fail "line-comment-view suite"
 
 echo "ALL TESTS PASSED"

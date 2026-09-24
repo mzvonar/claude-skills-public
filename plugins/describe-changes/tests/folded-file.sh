@@ -81,11 +81,39 @@ assert 'class="diff"' in entry, "the folded file still has no diff — the fix i
 assert "the operator in the tab title" in entry, "the folded hunk's own lines are missing"
 print("folded file: banner first, then the real diff            OK")
 
+# …but COLLAPSED behind a disclosure. A banner saying "not worth your attention" answered with a
+# screen of that content buries its own sentence, which is what made the notice unreadable.
+assert '<details class="foldcode">' in entry, "the folded code is not behind a disclosure"
+assert entry.index("foldnote") < entry.index("foldcode"), "the banner must precede the disclosure"
+assert entry.index("foldcode") < entry.index('class="diff"'), "the diff must sit INSIDE the disclosure"
+assert "<summary>Expand code" in entry, "the disclosure has no Expand code control"
+assert entry.rstrip().endswith("</details>"), "the disclosure is not closed around the code"
+# The control says how much is behind it, so the click is an informed one.
+import re as _re
+m2 = _re.search(r"<summary>Expand code · (\d+) changed line", entry)
+assert m2, "the Expand control does not say how much code it hides"
+assert int(m2.group(1)) >= 1, "the changed-line count reads zero on a file that changed"
+print("its code is collapsed behind Expand, with a line count   OK")
+
 # A file with real changes keeps its plain sheet — no banner, because nothing was withheld.
 real = next(v for k, v in store.items() if k.endswith("real.ts"))["html"]
 assert "foldnote" not in real, "a substantive file must not carry the fold banner"
 assert 'class="diff"' in real, "the substantive file lost its diff"
 print("substantive file: unchanged, no banner                   OK")
+
+# THE OTHER WAY IN. A fold card's own file buttons open the folded HUNKS (openHunks), not the
+# file store above, and that path is built client-side — so it carried no banner at all while
+# this file's path had one. A notice on one path and not the other reads, to whoever took the
+# other one, as no notice; that is exactly how it was reported. Both paths now say the same thing.
+assert 'data-open-kind="' in page, "the fold card does not pass its kind into the hunk view"
+m3 = re.search(r"const openHunks = \(ids, label, kind\) => \{(.*?)\n  \};", page, re.S)
+assert m3, "openHunks does not take the fold kind"
+oh = m3.group(1)
+assert "foldnote" in oh, "the hunk view renders no fold banner"
+assert 'details class="foldcode"' in oh, "the hunk view does not collapse its code"
+assert "esc(kind)" in oh, "the fold kind reaches the DOM unescaped"
+assert "dataset.openKind" in page, "the click handler does not forward the fold kind"
+print("the fold-card hunk view carries the same banner          OK")
 PY
 
 echo "FOLDED FILE TESTS PASSED"

@@ -737,7 +737,7 @@ def postman_collection(items, name):
             "variable": [{"key": "base", "value": "http://localhost:3000"}],
             "item": reqs}
 
-def fold_ref(path, hunk_ids, hunks, label=None):
+def fold_ref(path, hunk_ids, hunks, label=None, kind=None):
     """A file inside a fold card, opening the FOLDED hunks for that file — not its whole diff.
 
     The distinction is the point of the section. A file listed under "import-only changes" usually
@@ -749,7 +749,11 @@ def fold_ref(path, hunk_ids, hunks, label=None):
     mine = [hid for hid in (hunk_ids or []) if hid in hunks and hunks[hid][1] == path]
     if not mine:
         return fpath(path, known=None) if label is None else f"<span>{E(label or path)}</span>"
-    return (f'<button class="fpath" data-open-hunks="{E(",".join(mine))}" data-open-label="{E(path)}"{st_attr(path)}'
+    # `data-open-kind` carries the CARD's own title into the sheet. Without it the hunk view opened
+    # straight onto folded code with nothing saying it was the fold — the same notice a folded-only
+    # FILE gets, missing on the other way in, which is indistinguishable from the notice not existing.
+    kind_attr = f' data-open-kind="{E(kind)}"' if kind else ""
+    return (f'<button class="fpath" data-open-hunks="{E(",".join(mine))}" data-open-label="{E(path)}"{st_attr(path)}{kind_attr}'
             f' title="Show the folded change in {E(path)}">{E(label or path)}</button>')
 
 UNNAMED_COMPONENT = "the receiving component is not named inside the hunk"
@@ -821,7 +825,7 @@ def fold_card(g, known=None, hunks=None):
         sub = ""
         if it.get("followers"):
             sub = ("<ul>" + "".join(
-                f'<li>{fold_ref(x["file"], x.get("hunk_ids"), hunks or {}) if x.get("hunk_ids") else fpath(x["file"], known)}'
+                f'<li>{fold_ref(x["file"], x.get("hunk_ids"), hunks or {}, kind=g.get("title")) if x.get("hunk_ids") else fpath(x["file"], known)}'
                 f' — {E(x["detail"])}</li>' for x in it["followers"]) + "</ul>")
         if it.get("prop"):
             # The prop card answers "where does this thing flow", which a file list cannot: the
@@ -834,7 +838,7 @@ def fold_card(g, known=None, hunks=None):
             continue
         if it.get("files"):
             sub = ('<details class="more"><summary>show files</summary><ul>'
-                   + "".join(f'<li>{fold_ref(x, it.get("hunk_ids"), hunks or {})}</li>' for x in it["files"])
+                   + "".join(f'<li>{fold_ref(x, it.get("hunk_ids"), hunks or {}, kind=g.get("title"))}</li>' for x in it["files"])
                    + "</ul></details>")
             # Direction comes from the model — re-deriving it here is how the page once said
             # "unused imports dropped" over a fold whose files only ADDED imports.
@@ -850,7 +854,7 @@ def fold_card(g, known=None, hunks=None):
         # `file` is a module name rather than a path fall back to plain text via fold_ref.
         if it.get("hunk_ids") and it.get("file"):
             label = f'{it["file"]}{(" · " + it["detail"]) if it.get("detail") else ""}'
-            head = fold_ref(it["file"], it["hunk_ids"], hunks or {}, label=label)
+            head = fold_ref(it["file"], it["hunk_ids"], hunks or {}, label=label, kind=g.get("title"))
         else:
             head = E(it["detail"]) if it.get("detail") else fpath(it["file"], known)
         items.append(f'<li>{head}{sub}</li>')
@@ -1216,10 +1220,20 @@ def main():
         status = f["status"] + (f' ← {f["old_path"]}' if f.get("old_path") else "") + (f' ← moved from {f["moved_from"]}' if f.get("moved_from") else "")
         kinds = E(f.get("noise_kind") or ", ".join(sorted({h["category"] for h in f["hunks"]})) or "—")
         if folded_only and body:
+            # The banner carries the claim; the code sits behind a disclosure rather than under
+            # it. Opening a file the report called noise and being met by a screen of that noise
+            # buries the one sentence explaining why you are looking at it — and the reader who
+            # wants to check the claim is the minority case, so it gets the click.
+            # added+removed, not `new_lines`: that is the hunk's SPAN (a 7-line context window
+            # around a one-line change reads as 7), and the number the reader is deciding on is
+            # how much actually changed.
+            n_lines = sum((h.get("added", 0) or 0) + (h.get("removed", 0) or 0) for h in f["hunks"]) or None
+            howmuch = f" · {n_lines} changed line{'s' if n_lines != 1 else ''}" if n_lines else ""
             html = (f'<div class="foldnote"><b>Folded as noise: {kinds}.</b> Nothing here was '
                     f'classified as a substantive change, so this file is not counted in the report '
-                    f'above. The diff is shown in full so you can judge that for yourself.</div>'
-                    + "".join(body))
+                    f'above.</div>'
+                    f'<details class="foldcode"><summary>Expand code{howmuch} — judge the fold '
+                    f'yourself</summary>' + "".join(body) + '</details>')
         else:
             html = "".join(body) or f'<div class="empty">no hunks to show (folded as noise: {kinds})</div>'
         store[f["path"]] = {"status": status, "html": html}
