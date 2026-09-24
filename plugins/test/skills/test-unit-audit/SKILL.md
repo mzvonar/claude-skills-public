@@ -145,11 +145,28 @@ no future run repeats this.
   diff must show no line previously covered going uncovered (a `diff` of the
   two coverage summaries per touched
   source file is enough). Reading both tests is still required to fold unique
-  assertions into a survivor — coverage proves lines, not assertions. One
-  accepted-delta class exists: a test-seam injection (e.g. a real sleeper or
-  clock default the tests now bypass) legitimately un-covers its trivial
-  real implementation — a 1–2 line, mechanism-explained delta gets
-  documented in the benchmark doc and accepted, not "fixed".
+  assertions into a survivor — coverage proves lines, not assertions — and
+  **the fold is RECORDED**: the bucket doc lists every deleted test with the
+  survivor (file + test title) that now carries each of its unique
+  assertions, or the stated reason an assertion was dropped on purpose.
+  Measured: a dedup bucket passed its coverage proof while losing seven pins
+  — `[0,1]` score bounds, a composite-score range, a same-currency
+  regression, a status-parity row, an absence assert, different-args
+  negatives on two memoised reads; the lines stayed covered, the properties
+  did not, and a review restored them one by one. The recorded rationale
+  also settles review challenges to deliberate drops in one reply (a
+  reviewer flagged a deleted default-value pin as lost coverage; the bucket
+  doc already said it mirrored the source literal and depended on no env
+  override, and the finding was withdrawn). One accepted-delta class
+  exists, and it is a LAST resort: a test-seam injection (e.g. a real
+  sleeper or clock default the tests now bypass) un-covers its trivial real
+  implementation. First cover it directly — one test that the real default
+  does what it claims, proven red against a no-op stand-in (measured at the
+  integration tier: the delta a first pass had documented and accepted was
+  closed exactly this way in review). Only when the real implementation
+  genuinely cannot be exercised cheaply does a 1–2 line,
+  mechanism-explained delta get documented in the benchmark doc and
+  accepted.
 - **One-shot mode always.** Every scripted run uses the runner's non-watch form
   and is checked for actual exit; a watcher mistaken for a run poisons every
   wall-clock number after it.
@@ -159,6 +176,17 @@ no future run repeats this.
 - **A measuring run owns the box.** No typecheck, lint, builds, or other suites
   (including the repo's e2e suite and its lock) while a benchmark is in flight;
   write-subagents stay paused. A run competing for cores measures noise.
+  **Your own harness is a writer too**: a turn-end hook that runs the suite
+  (common in agent setups) makes "start the run in the background and end
+  the turn to wait for it" TWO runs from one intent — and a hook whose
+  working directory is pinned to the checkout the session STARTED in runs a
+  DIFFERENT tree's suite (measured: five consecutive runs died before one
+  session walked its own process tree up to its own hook). Run benchmarks
+  in the FOREGROUND, never end a turn with a run in flight, and check where
+  the hooks `cd` before trusting any hook-driven gate from a worktree. If
+  the repo serialises DB-backed suites with a lock, verify the wrapper
+  exists on YOUR branch and in every checkout that can run — a lock only
+  half the processes take is worse than none.
 - **Config experiments are results either way.** A parallelism/isolation change
   that measures WORSE gets reverted and the measurement written into a comment
   beside the setting — otherwise the next audit re-flags it and re-runs the
@@ -282,9 +310,30 @@ Write `<docsDir>/test-unit-audit-<date>.md` with buckets in THIS order:
    flake rather than fail (measured: two escapees at ~1-in-3, one visible
    only under coverage-instrumentation load). And every file whose conversion
    touched timing or interaction gets a 5–6× repeat-run probe before the
-   bucket closes.
+   bucket closes. **Never SHORTEN a wait — replace it with a signal.** A
+   50ms sleep cut to 3ms is still a sleep, now with less margin; the fix for
+   a real timer is something the test controls — a deferred it releases, a
+   fake clock, a marker file the awaited process writes, a sentinel state —
+   and the test then asserts the ORDER the signal forced. The same holds for
+   any discriminating quantity (event counts, sample sizes, throttle
+   windows): shrinking N must recompute what the assertion can still detect
+   and state the derived bound (measured: 3/2/1ms timers "proving" reverse
+   completion order, a rate-cap test cut to too few events to catch a
+   doubled throttle, lock probes on fixed sleeps — all three rewritten in
+   review to released deferreds, a derived bound over 30 events, and a
+   wait on the lock's holder file; a fourth, a lazy-chunk render, went
+   1-in-3 red until the chunk was warmed explicitly).
 3. **Merges, dedup & tier moves** — duplicates folded, wrong-tier tests moved,
-   snapshot pruning. The coverage-diff proof applies here.
+   snapshot pruning. The coverage-diff proof (with its recorded
+   assertion fold) applies here. **A tier move is a CONFIG change for the
+   file, not a rename**: diff the source and destination projects'
+   `testTimeout` / `hookTimeout` / `env` / `setupFiles` / `environment`
+   before moving and carry what the file depends on (measured at the
+   integration tier: files moved out of a project with a 10s ceiling
+   dropped to the 5s default, three timed out under load, and a timed-out
+   body kept running and leaked mock calls into the NEXT test). A move is
+   also a RENAME: grep the whole repo for the old path — docs, skills,
+   guideline files, code comments — not just imports.
 4. **Broken tests** — correctness at ~0 runtime cost, grouped: always-pass /
    mock-drift / nondeterminism / dead-skipped. **Every repaired cannot-fail
    test is verified by a red-probe**: flip the product guard (or comment out
@@ -295,9 +344,22 @@ Write `<docsDir>/test-unit-audit-<date>.md` with buckets in THIS order:
    no module-state leakage, pool choice (threads vs forks), worker-count
    sweep, `fileParallelism`, `test.concurrent` for I/O-bound groups. Explicitly
    experimental: each lands only with a measured win and reverts with a
-   recorded measurement otherwise. `isolate: false` in particular trades
-   safety for speed — a suite that passes only under isolation has a real
-   state-leak bug this experiment will surface; budget triage time for it.
+   recorded measurement otherwise. Field results from one ~4,700-test run,
+   all A/B-interleaved: **`pool: threads`** measured −14.5% wall and was
+   REJECTED — worker threads ignore a runtime `process.env.TZ` mutation (the
+   zone is process-global and read once), so every test that sets TZ to
+   exercise a viewer's-timezone seam silently weakened: one went red, five
+   stayed green and vacuous. Grep for `process.env.TZ =` before trying it.
+   **`isolate: false`** measured −50% and was REJECTED — 40+ files failed
+   on cross-file module-cache reuse of module-scope singletons (DB client,
+   cache client, i18n), with a failure count that varied run to run; that
+   is the suite's design, not a state-leak bug to triage away. The variant
+   that survived: **partition by `vi.mock` usage into two projects** —
+   files that mock anything keep isolation, mock-free files run
+   `isolate: false` — green ×5 including shuffled orders at −13%; landing it
+   needs the partition computed at config load (a static file list silently
+   drops new files) plus a guard test, so it is a small project, not a
+   config flip.
 
 Cite each finding as file:line PLUS a short quoted anchor — line numbers drift
 as earlier buckets land, so executors locate by content, never by line alone.
@@ -317,8 +379,11 @@ snapshots that are the sanctioned contract format for a serializer.
   exceeds tool timeouts.
 - Record in the audit doc, per run: wall clock, the runner's own duration line
   AND its phase breakdown (transform/setup/collect/tests/environment),
-  pass/fail/skip/todo counts, collected test count. Derive `noiseFloorPct`
-  from the spread and write it into the config.
+  pass/fail/skip/todo counts, collected test count, and the box as MEASURED
+  (`nproc`, RAM — never copied from a config comment; a field baseline
+  claimed 14 CPUs on a 4-CPU box and its "14 parallel workers" reading
+  travelled into two bucket docs). Derive `noiseFloorPct` from the spread
+  and write it into the config.
 - **Baseline the receiving lanes too when tier moves look likely** (Phase 0's
   inventory usually says so): one timed run of each project/suite that
   bucket-3 moves would land in, taken NOW, pre-move — Phase 5's
@@ -357,7 +422,20 @@ snapshots that are the sanctioned contract format for a serializer.
   edits; no commits; read files fully before
   editing; after deletions grep for dangling imports, orphaned factories and
   fixtures, and stale snapshot files (`.snap` orphans linger after their test
-  dies — delete them with the test).
+  dies — delete them with the test); after renames grep prose too. **Test-code
+  hygiene**: no audit-narration comments in test files (`// bucket 2:
+  converted to fireEvent` — the benchmark doc is the record; a comment
+  explaining a SEAM stays, one narrating the task goes), no pasted finding
+  text, and the repo's own test conventions (in field runs: predicate
+  asserts as `toBe(true/false)`, the `userEvent` session created inside the
+  test or a `beforeEach` — never at module scope, it carries pointer and
+  keyboard state between tests — no hand-rolled casts or sequential fake
+  ids). When several agents hand-roll the SAME stub or shim, the
+  orchestrator's after-pass extracts it into the shared test-utils location
+  (measured: an action-wrapper shim and a service-lib stub set each grew a
+  copy per file before a review consolidated them; typing a barrel mirror
+  with `satisfies keyof <module>` caught four exports the copies had
+  silently omitted).
 - **Premise corrections are a deliverable.** Executors verify each finding's
   premise before acting (a "duplicate" describe can be the canonical pin a
   sibling file explicitly defers to; a helper can live in a different module
@@ -376,8 +454,13 @@ snapshots that are the sanctioned contract format for a serializer.
   rather than restarting from zero. Resumes re-read files, so interruptions
   are the largest avoidable token cost — another reason for the staggered
   launches above.
-- After all land: diff review + typecheck + `listCommand`, then the bucket
-  benchmark.
+- After all land: diff review + typecheck + `listCommand` + **the repo's own
+  policy ratchets/scanners** (count ratchets, banned-cast scans, style
+  lints) — audit edits trip them in BOTH directions: a rewritten mock block
+  carries a banned cast the original had (a reviewer flags it as new, and
+  since the block was rewritten it is fair to fix now), and deletion
+  buckets LOWER count baselines — lower the baseline to lock the drop in.
+  Then the bucket benchmark.
 
 ## Phase 5 — Benchmark the bucket
 
@@ -395,6 +478,21 @@ snapshots that are the sanctioned contract format for a serializer.
   relocated suite its own timed row, AND wire it into CI in the same bucket —
   a relocation reported as savings is dishonest, and a suite no workflow
   invokes rots silently (this repo family has the incident to prove it).
+  The receiving lane gets the paired protocol: interleaved pairs of
+  base-commit vs branch, same box, same session, the CI-SHAPED command —
+  never a number from another day, branch or worktree (measured: a sibling
+  audit's first relocated-cost figure compared against a day-old benchmark
+  from another worktree and cited a script that no longer existed;
+  re-measured as three interleaved pairs it moved from +14.5s to +17.0s).
+  Wire the relocated project into CI as ONE invocation with the existing
+  step where the runner supports it (`--project a --project b` shares the
+  worker pool; a second step pays a second boot) and PIN the wiring with a
+  test that reads the runner config, the package scripts and the workflow
+  file — without it the split is one edit from silently dropping the
+  relocated project. And state the win's effect on the command that
+  actually GATES developers (a combined hook/CI command, if any) — or say
+  plainly that it is unmeasured; a per-project saving is not a saving on
+  the gate until measured there.
 - **Parallelism experiments get the paired protocol**: default config vs
   experiment on the SAME tree, interleaved (A,B,A,B) so machine drift can't
   masquerade as a win; a worse result is reverted and recorded beside the
@@ -432,6 +530,14 @@ The audit is not done when the last benchmark is green:
   commits were not authorized, state exactly what is uncommitted and offer
   the commits — do not leave the user to discover a 100-file working tree.
 - **Session memory / handoff notes**, if the environment keeps them.
+- **Review.** An audit PR is large by construction (150–200 files in the
+  field). Check the AI reviewer's file cap and force its run explicitly — a
+  silent no-review is NOT a clean pass (measured: one over-cap PR got no
+  notice at all where earlier over-cap PRs had posted one; tagging the bot
+  produced a full review in minutes). Expect the review to challenge every
+  deliberate deletion and every shortened wait — the bucket docs' recorded
+  rationale is the answer, and a finding you cannot answer from them is a
+  finding.
 
 ## Recurring unit-tier mechanisms worth checking in any audit
 

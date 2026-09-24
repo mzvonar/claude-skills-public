@@ -111,7 +111,13 @@ run repeats this.
   otherwise (did it fail before the change? does the error match the documented
   signature?).
 - **Zero coverage loss.** Delete a test only after folding its unique assertions
-  into a survivor — verified by reading both tests, never by comparing titles.
+  into a survivor — verified by reading both tests, never by comparing titles —
+  and **record the fold**: the bucket doc lists every deleted test with the
+  survivor (file + test title) that now carries each of its unique
+  assertions, or the stated reason an assertion was dropped on purpose
+  (measured at the unit tier: a dedup bucket with a green line-coverage proof
+  still lost seven pins; the recorded rationale is also what answers a
+  reviewer challenging a deliberate drop in one reply).
 - **Commits: settle the policy at audit start, then commit per bucket at
   bucket close.** Before Phase 0, ask the user whether you may commit each
   bucket as it lands — explicitly, and especially where repo policy
@@ -122,7 +128,18 @@ run repeats this.
   cannot produce honest per-bucket history (measured on the integration
   tier: four deferred commits all needed overlap disclaimers).
 - If the project serializes test runs machine-wide (a lock script, a shared test
-  DB), respect it — never run two suites concurrently.
+  DB), respect it — never run two suites concurrently. **A lock only
+  serialises processes that TAKE it**: verify the wrapper exists on YOUR
+  branch and in every checkout/worktree that can run the suite (a worktree
+  cut from a base branch that predates the wrapper has the bare run while its
+  docs describe the lock) — half-taken, it is worse than none, because the
+  belief stops manual coordination. **Your own harness is a writer too**: a
+  turn-end hook that runs a suite makes "start the run in the background and
+  end the turn to wait" TWO runs, and a hook pinned to the checkout the
+  session STARTED in runs a different tree's suite — run benchmarks in the
+  foreground-monitored form below, never end a turn with a run in flight,
+  and check where hooks `cd` before trusting a hook-driven gate from a
+  worktree.
 - **A measuring run owns the whole box, not just the lock.** While a benchmark or
   validation run is in flight the orchestrator runs nothing heavy (no typecheck,
   lint, or unit tests) and write-subagents stay paused — their verification
@@ -230,7 +247,8 @@ asserts, load-bearing reloads) — so later passes don't "optimize" them away.
   reported as savings needs the receiving lane's before/after, and the
   "before" cannot be reconstructed once the moves land.
 - Record in the audit doc: wall clock, reported suite duration, pass/fail/skip,
-  collected test count, and the delta rule ("compare suite duration; build time is
+  collected test count, the box as MEASURED (`nproc`, RAM — never copied from
+  a config comment), and the delta rule ("compare suite duration; build time is
   a constant; a run is comparable only if its failure set stays within the ledger").
 - Worktree gotcha: a `node_modules` symlink into another checkout breaks bundler
   production builds — do a real install in the worktree (and regenerate any gated
@@ -251,7 +269,13 @@ asserts, load-bearing reloads) — so later passes don't "optimize" them away.
   runs; no shared-file edits; no commits; read files fully before editing; verify
   with the framework's collect-only mode (`playwright test --list` — proves
   parse + collection without running) and grep for dangling references and
-  orphaned constants after deletions.
+  orphaned constants after deletions — and prose (docs, skills, guideline
+  files, comments) after renames. **Test-code hygiene**: no audit-narration
+  comments in spec files (`// bucket 2: merged from …` — the benchmark doc is
+  the record; a comment explaining an anti-flake SEAM stays, one narrating the
+  task goes), no pasted finding text, and the repo's own conventions; when
+  several agents hand-roll the SAME helper, the orchestrator's after-pass
+  extracts it into the shared fixtures.
 - **Premise corrections are a deliverable**: executors verify each finding's
   premise before acting; a wrong premise is a report-back, never a forced edit,
   and the orchestrator writes the correction into the audit doc.
@@ -269,7 +293,12 @@ asserts, load-bearing reloads) — so later passes don't "optimize" them away.
   reverted work; treat any stash as evidence to reconcile, not noise), then
   resume each agent with "re-check current on-disk state first", rather than
   restarting from zero.
-- After all land: diff review + typecheck + the collect-only check.
+- After all land: diff review + typecheck + the collect-only check + **the
+  repo's own policy ratchets/scanners** (count ratchets, banned-cast scans,
+  style lints) — audit edits trip them in both directions: a rewritten block
+  carries a banned construct the original had (a reviewer flags it as new,
+  and since the block was rewritten it is fair to fix), and deletions LOWER
+  count baselines — lower the baseline to lock the drop in.
 
 ## Phase 5 — Benchmark the bucket
 
@@ -277,7 +306,13 @@ asserts, load-bearing reloads) — so later passes don't "optimize" them away.
   a delta smaller than the noise floor is reported as "within noise", never spun.
   When a bucket de-serializes, add a run at a higher worker count: flat-at-default
   plus faster-at-width is the honest signature that the caps (not the tests) were
-  the constraint. A worker bump that measures WORSE (saturation flake for seconds
+  the constraint. When bucket 5 moves tests to another tier, decompose
+  relocated vs saved: the receiving lane is measured as interleaved pairs of
+  base-commit vs branch, same box, same session, the CI-shaped command —
+  never against a number from another day, branch or worktree (measured at
+  the integration tier: a borrowed day-old figure was off by a fifth) — and
+  the relocated tests' CI wiring lands in the same bucket, pinned by a test
+  that reads the runner config, package scripts and workflow file. A worker bump that measures WORSE (saturation flake for seconds
   saved) is a result, not a failure: revert it and write the measurement into the
   config comment beside the cap — otherwise the next audit re-flags the cap as
   vestigial and re-runs the experiment.
@@ -319,6 +354,13 @@ The audit is not done when the last benchmark is green:
   commits were not authorized, state exactly what is uncommitted and offer
   the commits — do not leave the user to discover a 100-file working tree.
 - **Session memory / handoff notes**, if the environment keeps them.
+- **Review.** An audit PR is large by construction (150–200 files in the
+  field). Check the AI reviewer's file cap and force its run explicitly — a
+  silent no-review is NOT a clean pass (measured: one over-cap PR got no
+  notice at all where earlier over-cap PRs had posted one). Expect the
+  review to challenge every deliberate deletion — the bucket docs' recorded
+  rationale is the answer, and a finding you cannot answer from them is a
+  finding.
 
 ## Recurring mechanisms worth checking in any audit
 

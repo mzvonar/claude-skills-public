@@ -99,7 +99,7 @@ URL destroys real state, not just numbers.
      inline). Read what setup actually DOES — note every destructive step.
    - `dbShellCommand` — a psql (or equivalent) invocation reaching the TEST
      database, for the DB-side profile (e.g.
-     `docker compose -f docker-compose.test.yml exec db psql -U postgres uctoinak_integration`).
+     `docker compose -f docker-compose.test.yml exec db psql -U postgres app_integration`).
    - `dbName` — the test database's name, verbatim. The audit refuses to run
      anything until it has confirmed, via `dbShellCommand`, that the
      configured URL lands on this database and no production-shaped one.
@@ -139,8 +139,8 @@ URL destroys real state, not just numbers.
     "coverageCommand": "bash scripts/with-integration-lock.sh vitest run --project integration --coverage",
     "dbStartCommand": "pnpm db:test:start",
     "dbSetupCommand": "pnpm db:test:setup integration",
-    "dbShellCommand": "docker compose -f docker-compose.test.yml exec -T db psql -U postgres uctoinak_integration",
-    "dbName": "uctoinak_integration",
+    "dbShellCommand": "docker compose -f docker-compose.test.yml exec -T db psql -U postgres app_integration",
+    "dbName": "app_integration",
     "isolationStrategy": "tx-rollback",
     "docsDir": "docs",
     "auditDepth": "full",
@@ -170,11 +170,24 @@ URL destroys real state, not just numbers.
   run the coverage command before and after with BOTH `json-summary` and
   `lcov` reporters; the summary diff finds a regressed file, the lcov pair
   names the exact lines. Reading both tests is still required to fold unique
-  assertions into a survivor — coverage proves lines, not assertions. One
-  accepted-delta class exists: a test-seam injection (e.g. a real sleeper
-  default the tests now bypass) legitimately un-covers its trivial real
-  implementation — a 1–2 line, mechanism-explained delta gets documented in
-  the benchmark doc and accepted, not "fixed".
+  assertions into a survivor — coverage proves lines, not assertions — and
+  **the fold is RECORDED**: the bucket doc lists every deleted test with the
+  survivor (file + test title) that now carries each of its unique
+  assertions, or the stated reason an assertion was dropped on purpose
+  (measured at the unit tier: a dedup bucket passed its coverage proof while
+  losing seven pins — range bounds, a parity row, an absence assert,
+  different-args negatives on memoised reads; the lines stayed covered, the
+  properties did not, and a review restored them one by one. The recorded
+  rationale also settles review challenges to deliberate drops in one
+  reply). One accepted-delta class exists, and it is a LAST resort: a
+  test-seam injection (e.g. a real sleeper default the tests now bypass)
+  un-covers its trivial real implementation. First cover it directly — one
+  test that the real default does what it claims, proven red against a no-op
+  stand-in (measured: the delta a first pass had documented and accepted was
+  closed exactly this way in review — one test, milliseconds of runtime).
+  Only when the real implementation genuinely cannot be exercised cheaply
+  does a 1–2 line, mechanism-explained delta get documented in the benchmark
+  doc and accepted.
 - **One-shot mode always**, and **read result counters by grepping the whole
   log** — never a fixed-size tail; a red run can read green from its last
   lines.
@@ -184,10 +197,28 @@ URL destroys real state, not just numbers.
   shared disk, shared CPU), and write-subagents stay paused. The saturation
   signature at this tier: timeouts in `beforeEach` seed/clean hooks of files
   the diff never touched ⇒ the run is INVALID; rerun on a quiet box.
+  **Your own harness is a writer too**: a turn-end hook that runs the suite
+  (common in agent setups) makes "start the run in the background and end
+  the turn to wait for it" TWO runs from one intent — and a hook whose
+  working directory is pinned to the checkout the session STARTED in runs a
+  DIFFERENT tree's suite, unlocked, against the same database (measured:
+  five consecutive full runs died in global setup — `_prisma_migrations
+  does not exist`, a deadlock between two processes building the same index
+  — and two sessions blamed each other before one walked its own process
+  tree up to its own hook). Run benchmarks in the FOREGROUND, never end a
+  turn with a run in flight, and check where the hooks `cd` before trusting
+  any hook-driven gate from a worktree.
 - **Respect the serialization wrapper, never route around it.** If the repo
   locks integration runs, every scripted run in this audit — benchmarks,
   scoped verifications, coverage — goes through the wrapper. Queueing behind
-  it is a cost; wiping another session's schema is an incident.
+  it is a cost; wiping another session's schema is an incident. **And a lock
+  only serialises processes that TAKE it**: verify the wrapper exists on
+  YOUR branch and in every checkout/worktree that can run the suite — a
+  worktree cut from a base branch that predates the wrapper has the bare
+  run while its docs describe the lock (measured: two sessions argued about
+  whether runs were serialised; both were right about their own tree).
+  Half-taken, a lock is worse than none, because the belief is what stops
+  you coordinating by hand.
 - **Warm state is part of the protocol.** The first run after a container
   start pays cold caches (DB page cache, ORM engine, module transforms) —
   discard a warm-up run before measuring, and record container state per run.
@@ -215,15 +246,32 @@ URL destroys real state, not just numbers.
    dominates, but a fat `setup` line means the per-file environment boot
    (DB connect, per-file migrate checks) is the story.
 2. **DB-side profile.** In the TEST container only:
-   - `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;` (compose:
-     `command: postgres -c shared_preload_libraries=pg_stat_statements`) —
-     **in the MAINTENANCE database (`postgres`), not the test DB** when the
-     per-run setup drops the test schema: the drop deletes the extension's
-     functions mid-audit while the preload keeps collecting (measured: the
-     first reset call failed exactly this way). Reset stats, run the suite
-     once, then rank by `total_exec_time` and by `calls`. The `calls` column is the round-trip census: a 0.2ms query
-     called 40,000 times is a fixture-design finding no per-query profile
-     shows.
+   - `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;` — **in the
+     MAINTENANCE database (`postgres`), not the test DB** when the per-run
+     setup drops the test schema: the drop deletes the extension's functions
+     mid-audit while the preload keeps collecting (measured: the first reset
+     call failed exactly this way). The preload
+     (`shared_preload_libraries=pg_stat_statements`) goes in an **opt-in
+     override compose file** applied only for the measuring run
+     (`docker compose -f <base>.yml -f <audit-override>.yml up -d --wait
+     <db>`), **never into the shared compose file**: compose containers are
+     one instance per project name, shared by every checkout and worktree,
+     and a changed config hash makes the next `up -d --wait` from ANY
+     checkout RECREATE the container under whatever run is in flight
+     (measured: two consecutive full runs red — `relation … does not exist`,
+     `terminating connection due to administrator command`, then setup
+     aborting with `57P01` — every failing file green in isolation; the
+     "other checkout" was the session's own turn-end hook, see
+     Non-negotiables). No lock helps: the recreate happens inside global
+     setup and a sibling suite's separate lock on the same container triggers
+     it too. Apply the override while holding EVERY lock that guards that
+     container with nothing running; `command:` replaces the base list
+     wholesale, so restate the base flags in the override; the next ordinary
+     run puts the standard config back (one more recreate — say so in the
+     override's header). Reset stats, run the suite once, then rank by
+     `total_exec_time` and by `calls`. The `calls` column is the round-trip
+     census: a 0.2ms query called 40,000 times is a fixture-design finding
+     no per-query profile shows.
    - **Per-test query counts**: hook the ORM's query event (Prisma:
      `$on('query')`, or the driver's log) into a counter reset per test and
      emitted alongside the timing profile. The top-N tests by query count
@@ -247,7 +295,12 @@ URL destroys real state, not just numbers.
    (what every test may assume exists); which projects CI actually runs
    (grep the workflows — a suite no workflow invokes is itself a finding);
    how CI provisions the DB (services block vs compose — a template-DB or
-   tuning win must land in both or be honestly scoped).
+   tuning win must land in both or be honestly scoped). Read the workflow's
+   STEP LIST for this, not the setup script's `if (CI) skip` branch: a
+   global setup that skips its own `compose up` under CI reads as "CI has no
+   compose", and in the field that was false — CI ran the SAME compose file
+   in an earlier step, so a compose-level change reached every CI lane
+   unmeasured while the audit doc said it was local-only.
 5. **Smell greps** (leads for Phase 1, not findings): per-test
    `cleanDb`/`TRUNCATE`/`deleteMany` rituals under a rollback strategy; `new
    PrismaClient(`/`new Pool(`/`createConnection` in code paths under test
@@ -279,9 +332,11 @@ Report three categories as tables of
    `tx-rollback` (pure cost — the environment rolls it back anyway); `create`
    loops in helpers (→ `createMany`/batch, or one `$transaction` round-trip);
    chatty assertion styles (a SELECT per field → one fetch, many asserts);
-   real sleeps around polling for DB state (→ tighter poll interval, or
-   assert the durable outcome directly — the write is synchronous in a
-   transaction); **real retry/backoff waits in adapters under test** (→
+   real sleeps around polling for DB state (→ assert the durable outcome
+   directly — the write is synchronous in a transaction; **never merely
+   SHORTEN a wait**: a 50ms sleep cut to 3ms is still a sleep with less
+   margin — replace it with a signal the test controls, see the unit tier's
+   bucket 2); **real retry/backoff waits in adapters under test** (→
    inject a sleeper — an optional ctor/param defaulting to the real one —
    and assert the SCHEDULE: exact delays called, which is stronger than any
    wall-clock bound; measured −8.9s in one file, and the "fake timers
@@ -371,7 +426,22 @@ Write `<docsDir>/test-integration-audit-<date>.md` with buckets in THIS order:
    carry mock fidelity (the new mock typed against the real module —
    `vi.mocked`/`satisfies` — because an untyped mock is the drift this tier
    exists to catch), and a move OUT of the arbiter command triggers Phase 5's
-   relocated-vs-saved decomposition.
+   relocated-vs-saved decomposition. **A tier move is a CONFIG change for
+   the file, not a rename**: diff the source and destination projects'
+   `testTimeout` / `hookTimeout` / `env` / `setupFiles` / `environment`
+   BEFORE moving and carry what the file depends on (measured: 58 files
+   moved out of a project with a 10s ceiling dropped to the runner's 5s
+   default without a line of them changing; files that re-import a service
+   graph after `vi.resetModules()` or parse a whole source tree then ran at
+   80–95% of budget, three timed out under load, and a timed-out body KEPT
+   RUNNING and leaked mock calls into the NEXT test, which failed with a
+   count mismatch pointing nowhere near the cause). Re-time moved files
+   under the contention CI and turn-end hooks actually run with — a
+   quiet-box green says nothing about the margin. And a move is also a
+   RENAME: grep the whole repo for the old path — docs, wiki, skills,
+   guideline files, code comments — not just imports (measured: 8 skill
+   files, a wiki page and 4 comments pointed at dead paths after the suffix
+   changes; one sent readers to a command that no longer ran that lint).
 4. **Broken tests** — correctness at ~0 runtime cost, grouped: seed-satisfied
    / ordering-accident / tx-escape / swallowed-failure / clock-drift /
    dead-skipped. **Every repaired cannot-fail test is verified by a
@@ -381,7 +451,17 @@ Write `<docsDir>/test-integration-audit-<date>.md` with buckets in THIS order:
    PRODUCT seam where possible (inject the client) — that is a product
    change; if it can't land now, file it to the deferred-work ledger with an
    ID and keep the test cluster's manual cleanup with a comment pointing at
-   the ID.
+   the ID. **Narrowing an assertion to kill a flake is a coverage deletion
+   unless proven otherwise**: write down the regression the OLD assertion
+   caught, then red-probe the NEW one against THAT regression — not against
+   any regression (measured: a global `count({}) === 0` that raced other
+   files' deliberately committed rows was scoped to one seeded identity —
+   race-free, and vacuous: the code path under test had no route to that
+   identity, so a regression creating a row for ANY other one stayed green,
+   and the red-probe that would have shown it was never asked. Two reviewers
+   found it by asking "what regression would still pass?", not "is this
+   race-free?"). The breadth-preserving fix is the transaction-scoped count
+   in "Recurring mechanisms" below.
 5. **Parallelism & isolation experiments** — explicitly experimental, each
    lands only with a measured win and reverts with a recorded measurement:
    worker-count sweep BOUNDED by the connection budget (workers ×
@@ -409,7 +489,9 @@ not be re-run).
   fall back to the detached `setsid nohup … ; echo $? > tmp/runN-exit`
   protocol only if a run genuinely exceeds tool timeouts.
 - Record per run: wall clock, the runner's duration line and phase breakdown,
-  pass/fail/skip counts, collected count, container state (warm/cold), and
+  pass/fail/skip counts, collected count, container state (warm/cold), the
+  box as MEASURED (`nproc`, RAM — never copied from a config comment; a
+  field baseline claimed 14 CPUs on a 4-CPU box), and
   the DB-side totals (`pg_stat_statements` sum) so later buckets can claim
   DB-side deltas honestly. Derive `noiseFloorPct` from the spread and write
   it into the config — expect it to be worse than the unit tier's (a real
@@ -451,9 +533,20 @@ not be re-run).
   GREEN-ONLY: agents must not claim per-file timings — the default reporter
   prints no per-file lines in non-TTY runs (three field agents burned their
   run budget discovering this), and all before/after attribution comes from
-  the orchestrator's JSON-reporter full runs; no shared-file edits; no commits; read files fully before
-  editing; after deletions grep for dangling imports, orphaned fixture
-  helpers, and seed rows now referenced by nothing.
+  the orchestrator's JSON-reporter full runs; no shared-file edits; no
+  commits; read files fully before editing; after deletions grep for
+  dangling imports, orphaned fixture helpers, and seed rows now referenced
+  by nothing; after renames grep prose too (see bucket 3). **Test-code
+  hygiene**: no audit-narration comments in test files (`// bucket 2:
+  cleanDb removed` — the benchmark doc is the record; a comment explaining a
+  SEAM stays, one narrating the task goes), no pasted finding text, file
+  headers that don't claim a tier the file no longer has, and the repo's own
+  test conventions (in field runs: predicate asserts as `toBe(true/false)`,
+  no hand-rolled casts or sequential fake ids, typed enum literals in seed
+  helpers). When several agents hand-roll the SAME stub, shim or fixture
+  builder, the orchestrator's after-pass extracts it into the shared
+  test-utils location (measured: a deterministic-embedding helper and two
+  action shims each grew three copies before a review consolidated them).
 - **Premise corrections are a deliverable.** Executors verify each finding's
   premise before acting — at this tier especially the redundancy claims (is
   this cleanup REALLY covered by rollback, or does the code under test
@@ -486,7 +579,20 @@ not be re-run).
 - **Decompose relocated vs saved** when tests moved tier or project: cost
   that moved gets its own timed row AND its CI wiring in the same bucket — a
   relocation reported as savings is dishonest, and a suite no workflow
-  invokes rots silently.
+  invokes rots silently. **The receiving lane gets the paired protocol
+  too**: interleaved pairs of base-commit vs branch, same box, same session,
+  the CI-SHAPED command (projects CI runs in one invocation are timed as one
+  invocation) — never against a number from another day, branch or worktree
+  (measured: a first "+14.5s relocated" compared against a day-old benchmark
+  from another worktree, split two projects CI runs together into two rows,
+  and cited a script that no longer existed; re-measured as three
+  interleaved pairs it was +17.0s, and the tier move was honestly a
+  relocation, not a saving). Wire the relocated project into CI as ONE
+  invocation with the existing step where the runner supports it
+  (`--project a --project b` shares the worker pool; a second step pays a
+  second boot), and PIN the wiring with a test that reads the runner config,
+  the package scripts and the workflow file — without it the split is one
+  edit from silently dropping the relocated project.
 - **Infra and parallelism experiments get the paired protocol**: default vs
   experiment on the SAME tree, interleaved A,B,A,B so machine and DB drift
   can't masquerade as a win; DB-tuning experiments also restart the
@@ -534,8 +640,33 @@ The audit is not done when the last benchmark is green:
   commits were not authorized, state exactly what is uncommitted and offer
   the commits — do not leave the user to discover a 100-file working tree.
 - **Session memory / handoff notes**, if the environment keeps them.
+- **Review.** An audit PR is large by construction (150–200 files in the
+  field). Check the AI reviewer's file cap and force its run explicitly — a
+  silent no-review is NOT a clean pass (measured: one over-cap PR got no
+  notice at all where earlier over-cap PRs had posted one; tagging the bot
+  produced a full review in minutes). Expect the review to challenge every
+  deliberate deletion and every narrowed assertion — the bucket docs'
+  recorded rationale is the answer, and a review finding you cannot answer
+  from them is a finding.
 
 ## Recurring integration-tier mechanisms worth checking in any audit
+
+- **A "wrote nothing" proof under `tx-rollback`: count the test's own
+  transaction, not the table.** A table-wide `count({})` races other files'
+  deliberately committed rows; a count scoped to one seeded identity is
+  race-free and vacuous (bucket 4). Postgres shows a reader only committed
+  rows plus its own uncommitted ones, so rows whose writing transaction is
+  still `in progress` — `pg_xact_status` on the epoch-widened `xmin`
+  (`((pg_current_xact_id()::text::bigint >> 32) << 32) | xmin::text::bigint`)
+  — are exactly what THIS test wrote, savepoints included, other workers'
+  committed racer rows excluded by construction. Add the transaction's own
+  delete counter (`pg_stat_get_xact_tuples_deleted(<table>::regclass)`,
+  which sums savepoints): a DELETE of a committed row leaves no tuple for
+  the xmin scan to find (a review caught the helper without it — the
+  "no side effects" tests would have stayed green had the action deleted an
+  existing row). Pin the helper with one control test per property: direct
+  insert counted, savepoint insert counted, committed foreign row ignored,
+  deleted committed row counted — each seen red with its term removed.
 
 - **The double-isolation tax.** Suites accrete cleanup rituals across eras:
   truncate helpers from before the rollback environment, `deleteMany`
