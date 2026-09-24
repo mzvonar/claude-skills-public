@@ -52,6 +52,12 @@ time hides:
   deletion/merge bucket keeps the mechanical before/after coverage-diff
   guarantee.
 
+First field run (2026-09, a ~2,100-test / 184-file suite): 104.8s → 76.5s
+(−27%), with the DB measured at **4%** of suite cost, ~10s of real sleeps,
+~5s of fixture seed loops, and **56 files that never touched the database**
+misfiled into the DB project. Several lessons from that run are folded in
+below, marked "(measured)".
+
 The mechanics below name Vitest + Postgres (+ Prisma where an ORM hook is
 needed) where a concrete command is required; substitute the project's runner,
 database, and data layer — the method is stack-agnostic.
@@ -194,9 +200,12 @@ URL destroys real state, not just numbers.
    (DB connect, per-file migrate checks) is the story.
 2. **DB-side profile.** In the TEST container only:
    - `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;` (compose:
-     `command: postgres -c shared_preload_libraries=pg_stat_statements`),
-     reset stats, run the suite once, then rank by `total_exec_time` and by
-     `calls`. The `calls` column is the round-trip census: a 0.2ms query
+     `command: postgres -c shared_preload_libraries=pg_stat_statements`) —
+     **in the MAINTENANCE database (`postgres`), not the test DB** when the
+     per-run setup drops the test schema: the drop deletes the extension's
+     functions mid-audit while the preload keeps collecting (measured: the
+     first reset call failed exactly this way). Reset stats, run the suite
+     once, then rank by `total_exec_time` and by `calls`. The `calls` column is the round-trip census: a 0.2ms query
      called 40,000 times is a fixture-design finding no per-query profile
      shows.
    - **Per-test query counts**: hook the ORM's query event (Prisma:
@@ -205,6 +214,10 @@ URL destroys real state, not just numbers.
      are Phase 1's priority reading list next to the top-N by duration.
    - Join the two clocks for the hot tests: `app-time − db-time = waiting`.
      A big residue means sleeps, polls, or serialization — not SQL.
+   - **State the suite-level verdict as a fraction**: db-time ÷ tests-phase.
+     The first field run measured 4% — a number that flips the whole audit's
+     center of gravity to app-side mechanics (sleeps, import churn, fixture
+     CPU, misfiled unit tests) and justifies skipping DB tuning outright.
 3. **Fixed-cost decomposition.** Time separately, once each: container start
    (cold), `dbSetupCommand` (the migrate/seed replay), the runner's global
    setup, and one trivial control test (connect + begin/rollback + `SELECT 1`,
@@ -252,10 +265,19 @@ Report three categories as tables of
    chatty assertion styles (a SELECT per field → one fetch, many asserts);
    real sleeps around polling for DB state (→ tighter poll interval, or
    assert the durable outcome directly — the write is synchronous in a
-   transaction); connection churn (per-test client construction); per-test
-   schema checks or migrate calls; heavy module imports the test never uses
-   at runtime (transform cost, same as unit tier); production-cost hashing in
-   seeded identities (→ test-env cost factor, config-only).
+   transaction); **real retry/backoff waits in adapters under test** (→
+   inject a sleeper — an optional ctor/param defaulting to the real one —
+   and assert the SCHEDULE: exact delays called, which is stronger than any
+   wall-clock bound; measured −8.9s in one file, and the "fake timers
+   deadlock" folklore blocking it was a misdiagnosis); **per-test
+   `vi.resetModules()` + re-import of heavy service graphs** (~700-800ms per
+   cycle measured — only env-flip tests need a fresh graph; group by env
+   config and import once per group; a barrel import maximizes the graph
+   paid per reset); connection churn (per-test client construction);
+   per-test schema checks or migrate calls; heavy module imports the test
+   never uses at runtime (transform cost, same as unit tier);
+   production-cost hashing in seeded identities (→ test-env cost factor,
+   config-only).
 2. **DUPLICATES / UNNECESSARY / WRONG TIER** — the same repository path
    exercised once directly and once per caller; tests asserting the ORM or
    the database does what its docs say (cascade deletes, unique-violation
@@ -281,7 +303,13 @@ Report three categories as tables of
    `expect(...).rejects` without await; catch blocks swallowing constraint
    violations the test meant to assert; `NOW()` in SQL diverging from a
    pinned JS clock (assertions with time-window tolerances that sometimes
-   miss); hardcoded auto-increment/sequence expectations; `test.skip`/`todo`
+   miss); **ordering asserts on DB-defaulted timestamps** — inside the test
+   transaction every `DEFAULT CURRENT_TIMESTAMP` row gets the SAME
+   `transaction_timestamp()`, so an `ORDER BY createdAt` with no tiebreaker
+   returns tie-order and the test passes on insertion accident (fix: seed
+   explicit distinct timestamps NEWEST-FIRST so only the ORDER BY can pass
+   the test; recommend an `id` tiebreaker in the product query);
+   hardcoded auto-increment/sequence expectations; `test.skip`/`todo`
    older than the code they cover. Quote exact lines.
 
 Agents VERIFY suspicious guards and claimed redundancies (is that cleanup
@@ -317,7 +345,13 @@ Write `<docsDir>/test-integration-audit-<date>.md` with buckets in THIS order:
    Each row cites its measured cost on the RIGHT clock (app ms, DB ms, or
    query count) so the payoff is predicted and attributable.
 3. **Merges, dedup & tier moves** — duplicates folded, wrong-tier tests moved
-   both directions. The coverage-diff proof applies; a move DOWN to unit must
+   both directions. Expect the tier-move pile to be LARGE — suffix-routed
+   projects rot silently and the first field run found 56 DB-free files
+   (~30% of the project) paying the DB env. The coverage-diff proof applies
+   to deletions/merges; for MOVES the proof is **run-mode collected totals
+   across all projects before/after** (list-mode counts drift on
+   dynamic/env-driven cases — measured ±5 — while run-mode reconciled
+   exactly). A move DOWN to unit must
    carry mock fidelity (the new mock typed against the real module —
    `vi.mocked`/`satisfies` — because an untyped mock is the drift this tier
    exists to catch), and a move OUT of the arbiter command triggers Phase 5's
@@ -404,8 +438,11 @@ not be re-run).
 - **Interruption resilience**: reconcile `git status` against each agent's
   ownership list before resuming; resume with "re-check current on-disk
   state first" rather than restarting.
-- After all land: diff review + typecheck + `listCommand`, then the bucket
-  benchmark.
+- After all land: diff review + typecheck + `listCommand` + **the repo's own
+  policy ratchets/scanners** (count ratchets, style scans) — audit edits trip
+  them in BOTH directions (measured: inlined fixture defaults carried banned
+  casts into new code; deletion buckets LOWERED the count — lower the
+  baseline to lock a drop in), then the bucket benchmark.
 
 ## Phase 5 — Benchmark the bucket
 
@@ -427,7 +464,17 @@ not be re-run).
   experiment on the SAME tree, interleaved A,B,A,B so machine and DB drift
   can't masquerade as a win; DB-tuning experiments also restart the
   container between sides so cache state is symmetric. A worse result is
-  reverted and recorded beside the setting.
+  reverted and recorded beside the setting. Per-FILE times inside a parallel
+  run carry worker-scheduling noise (measured ±200ms on untouched files) —
+  a micro-optimization that regresses in-suite with no identifiable
+  mechanism and no clean solo adjudicator gets REVERTED and recorded, not
+  argued with (field case: a per-config import cache, logic-verified sound,
+  +856ms in-suite — reverted).
+- **Saturation flakes are triage, not regressions**: real-concurrency tests
+  (uncontained clients, row-lock racers) can flake under an all-projects
+  combined run on a small box (measured once: a lock-window race red at 4×
+  oversubscription, green in isolation and under the arbiter). Verify
+  green-in-isolation on a quiet box before treating it as yours.
 - Write `<docsDir>/test-integration-benchmark-bucket<N>.md`: results table
   (run | tree | config variant | wall | runner phases | pass/fail/skip |
   collected | DB warm/cold), the DB-side delta where claimed, the coverage
@@ -447,7 +494,12 @@ not be re-run).
   cascades "just in case". Under `tx-rollback` they are pure cost — but
   verify per file (a file in a different project, or a tx-escaping code
   path, may genuinely need its cleanup; deleting THAT one turns green runs
-  red a week later).
+  red a week later). The keep-list test that held up in the field: a wipe
+  stays when the SUT itself READS unscoped — a cross-org scheduler/cron
+  asserted with exact global counts (2 of 13 flagged wipes were kept for
+  exactly this). And the unscoped `deleteMany({})` wipes you do delete were
+  more than waste: they take row locks on OTHER workers' committed
+  escape-hatch fixtures — a documented cross-worker deadlock vector.
 - **The transaction-escape hatch is two findings in one.** Code constructing
   its own client/pool escapes the test transaction: a correctness hole (its
   reads can't see test data, its writes leak and create order coupling) AND
@@ -490,6 +542,14 @@ not be re-run).
 - **Nondeterminism debt, DB edition**: unpinned ordering, sequence values,
   UUID sort order, timezone-sensitive date bucketing. Pin at the seed/setup
   level so individual tests stop hand-rolling it.
+- **Suite-local knobs belong in the project's `env` block**, not in shared
+  dotenv files: a cost threshold (hashing rounds, a seeded-rows gate) or
+  `LOG_LEVEL` set in the runner config's per-project `env` scopes to that
+  suite only, wins over CI's inherited env, and carries its own comment
+  (measured: a trust-gate threshold 50→3 seeded 16× fewer rows with
+  identical semantics because tests referenced it symbolically; log level
+  raised to fatal killed error-path stdout noise without touching spies —
+  level filtering happens inside the logger).
 - **Stdout as a cost center** — same as the unit tier, with one addition: a
   query-logging hook left at debug level can double a chatty suite's wall
   time all by itself. Profile hooks are for profiling runs, not the default.

@@ -12,7 +12,7 @@
     {
       "name": "test",
       "source": "./plugins/test",
-      "version": "2.2.0",
+      "version": "2.2.1",
       "description": "Test-suite audit and optimization, one skill per tier: test-e2e-audit (Playwright/Cypress), test-unit-audit (Vitest/Jest), and test-integration-audit (runner + real database). Batch analysis via subagents, bucketed findings, machine-local baselines, and measured bucket-by-bucket fixes with benchmark tables.",
       "author": {
         "name": "Martin Zvonár"
