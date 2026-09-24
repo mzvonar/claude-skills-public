@@ -1197,6 +1197,14 @@ def main():
     store = {}
     for f in model["files"]:
         hs = [h["id"] for h in f["hunks"] if h["category"] == "substantive"]
+        # A file whose every hunk was folded used to open to a sentence saying so and nothing else,
+        # which asks the reader to take the fold on trust at the exact moment they went looking. So
+        # show the folded hunks instead, under a banner naming what they are: the fold is a claim
+        # about ATTENTION — not worth yours by default — and a reader who opens the file is entitled
+        # to check it. Substantive hunks still win when a file has any; this is only the empty case.
+        folded_only = not hs
+        if folded_only:
+            hs = [h["id"] for h in f["hunks"]]
         body, used, cut = [], 0, 0
         for hid in hs:
             if hid not in hunks: continue
@@ -1206,7 +1214,15 @@ def main():
             body.append(chtml); used += shown; cut += c
         if cut: body.append(f'<div class="empty">… {cut} more lines not shown (open the file for the rest)</div>')
         status = f["status"] + (f' ← {f["old_path"]}' if f.get("old_path") else "") + (f' ← moved from {f["moved_from"]}' if f.get("moved_from") else "")
-        store[f["path"]] = {"status": status, "html": "".join(body) or '<div class="empty">no substantive hunks (folded as noise: ' + E(f.get("noise_kind") or ", ".join(sorted({h["category"] for h in f["hunks"]})) or "—") + ')</div>'}
+        kinds = E(f.get("noise_kind") or ", ".join(sorted({h["category"] for h in f["hunks"]})) or "—")
+        if folded_only and body:
+            html = (f'<div class="foldnote"><b>Folded as noise: {kinds}.</b> Nothing here was '
+                    f'classified as a substantive change, so this file is not counted in the report '
+                    f'above. The diff is shown in full so you can judge that for yourself.</div>'
+                    + "".join(body))
+        else:
+            html = "".join(body) or f'<div class="empty">no hunks to show (folded as noise: {kinds})</div>'
+        store[f["path"]] = {"status": status, "html": html}
     for area_key, area_label in AREAS:
       n = len(by_area[area_key])
       if not n and area_key != "tests": continue

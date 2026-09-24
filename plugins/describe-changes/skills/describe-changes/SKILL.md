@@ -1,6 +1,6 @@
 ---
 name: describe-changes
-version: "1.26.1"
+version: "1.27.0"
 description: >
   Present an implemented change to a human reviewer the way a human needs it: what was done and why,
   a visual map of the high-level change (who calls whom, where data flows, what moved/split/renamed),
@@ -218,6 +218,12 @@ the exact shape in `reference/report-schema.md`. The non-negotiables:
   copy-as-curl, a Postman collection and an inline send against a base URL they choose. Skip
   `request` for a server action or RPC that has no addressable endpoint — a card that cannot be run
   is still a good card, and a fake endpoint is worse than none.
+- **A folded file still opens to its code.** A file whose every hunk was folded shows those hunks in
+  its sheet under a banner naming the fold ("Folded as noise: comment-only"), rather than a sentence
+  and nothing else. The fold is a claim about ATTENTION — not worth yours by default — and a reader
+  who opens the file is checking that claim, so answering them with the claim restated is the one
+  response that cannot help. Nothing about the report's counts changes: the file is still absent
+  from the sections above, and still folded.
 - **`folded`:** copy `diff-model.json` → `folds` verbatim; never invent folds, never re-word them.
   The HTML renders the model's folds, not this copy (a copy can only go stale), so it exists for the
   chat view and for exports that ship without a model. **`unreviewed_notes`:** one clause per substantive-but-unflagged file saying why it

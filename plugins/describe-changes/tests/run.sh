@@ -1597,5 +1597,7 @@ bash "$HERE/scope.sh" || fail "scope suite"
 bash "$HERE/highlight.sh" || fail "highlight suite"
 # A delta page's summary: what was done before how much, and what it refuses to quote.
 bash "$HERE/delta-summary.sh" || fail "delta-summary suite"
+# A fully-folded file still opens to its diff, under a banner naming the fold.
+bash "$HERE/folded-file.sh" || fail "folded-file suite"
 
 echo "ALL TESTS PASSED"

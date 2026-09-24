@@ -323,6 +323,12 @@ button.fpath:active{border-color:var(--info)}
 .toast{position:fixed;left:50%;bottom:5rem;transform:translateX(-50%);background:#2a3340;color:var(--fg);padding:.5rem .9rem;border-radius:8px;font-size:.8rem;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
 .toast.show{opacity:1}
 .empty{color:var(--fg3);font-size:.9rem;padding:.5rem 0}
+/* A file whose every hunk was folded still opens to its diff — the banner says why it was not
+   worth your attention, and the code below it lets you disagree. Sticky, because the reason has to
+   survive scrolling through the thing it is a caveat about. */
+.foldnote{position:sticky;top:0;z-index:2;background:rgba(113,128,150,.14);border-left:3px solid var(--fg3);
+  color:var(--fg2);font-size:.82rem;padding:.45rem .6rem;margin:0 0 .5rem;border-radius:0 4px 4px 0}
+.foldnote b{color:var(--fg);font-weight:600}
 /* Both sit ABOVE the file sheet (51). Most code in this report is read inside that sheet, so a
    popup underneath it means a comment started on a diff cannot be typed or sent — the button
    appears, the popup opens behind the sheet, and the reader is left tapping a dead panel.
