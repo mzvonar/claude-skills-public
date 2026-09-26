@@ -9,6 +9,24 @@ Plugin skills are read-only copies under `~/.claude/plugins/cache/claude-skills-
 there is overwritten by the next update; a copy in the repo's `.claude/skills/` silently shadows the
 plugin forever. The fix goes upstream, then comes back through the marketplace.
 
+## Step 0 — is this session reading the CURRENT skill text?
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-freshness.sh" "${CLAUDE_PLUGIN_ROOT}"
+```
+
+Local, no network, and **silent** unless something is wrong. Exit **3** — this session is serving
+an older cached copy of THIS plugin than the one installed; a session pins its version at the first
+call to a skill and never moves, so a mid-session update never reaches it. Put it to the user
+(`AskUserQuestion`): reload (`/reload-plugins`) and re-run, or carry on knowingly. It asks once per
+plugin per session. Exit **2** — could not determine; that is not a pass, say so. Exit **4** — this
+call is wired wrong and the check did nothing; report it rather than carrying on.
+
+It matters most HERE: step 5 ends by telling the user their change is rolled out, and it is the one
+place where saying that against stale text would be self-defeating. This skill also *creates* the
+skew — `claude plugin update` is what makes loaded < installed true — so expect the ask on the
+NEXT skill you run, and answer it once.
+
 ## 0. Identify the skill and its plugin
 
 `/<plugin>:<skill>` tells you both. Find the installed copy to read it:

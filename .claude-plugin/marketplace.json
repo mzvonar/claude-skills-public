@@ -22,7 +22,7 @@
     {
       "name": "dev-tools",
       "source": "./plugins/dev-tools",
-      "version": "1.2.1",
+      "version": "1.3.0",
       "description": "Everyday developer utilities: visual git diff, HTML finding reports, ngrok tunnels, codebase maps, git worktree workflow, and the upstream-first loop for updating marketplace skills.",
       "author": {
         "name": "Martin Zvonár"
@@ -32,7 +32,7 @@
     {
       "name": "workflow",
       "source": "./plugins/workflow",
-      "version": "1.5.1",
+      "version": "1.6.0",
       "description": "Delivery workflow skills: context handoffs, guideline hygiene, lessons capture, backlog storage and grooming, acceptance-criteria audits, story showcases.",
       "author": {
         "name": "Martin Zvonár"
@@ -42,7 +42,7 @@
     {
       "name": "next-js",
       "source": "./plugins/next-js",
-      "version": "1.1.1",
+      "version": "1.2.0",
       "description": "Next.js operations: cache invalidation discipline and clean dev-server restarts.",
       "author": {
         "name": "Martin Zvonár"
@@ -52,7 +52,7 @@
     {
       "name": "prisma",
       "source": "./plugins/prisma",
-      "version": "1.2.1",
+      "version": "1.3.0",
       "description": "Prisma 7 setup (Postgres, libSQL) and migration workflow with drift recovery.",
       "author": {
         "name": "Martin Zvonár"
@@ -62,7 +62,7 @@
     {
       "name": "describe-changes",
       "source": "./plugins/describe-changes",
-      "version": "1.29.1",
+      "version": "1.30.0",
       "description": "Human-first description of an implemented change: intent, visual map, ranked review spots, folded noise, in chat and as a mobile-first HTML report.",
       "author": {
         "name": "Martin Zvonár"

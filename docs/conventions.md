@@ -27,6 +27,55 @@ Document every key the skill reads in a `## Configuration` section of its SKILL.
 ## Cross references
 Skills reference each other in namespaced form, e.g. `/workflow:lessons`, `/next-js:clean-dev`, `/svc:dev-services`, `/dev-tools:worktree`.
 
+## Is the session even reading THIS version?
+
+A skill with a pre-flight, a setup step, or anything it calls "step 1" runs the freshness check
+there, as its own step 0 — **from its own plugin, and passing its own root**:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-freshness.sh" "${CLAUDE_PLUGIN_ROOT}"
+```
+
+Exit `0` = current and silent · `3` = ask the user · `2` = could not determine, which is not a
+pass · `4` = this call is wired wrong.
+
+**Pass the root; never rely on the variable reaching the shell.** `${CLAUDE_PLUGIN_ROOT}` is a
+token substituted into SKILL.md *text* when a skill loads — it is **not** an exported environment
+variable, measured: fifteen `CLAUDE_*` vars reach a Bash call and that is not one of them. The
+first version of this rule told skills to call the script with no argument; every call exited
+"undetermined", every skill's own text said "carry on", and the check did nothing in thirteen
+skills while looking installed. Hence exit `4` as a category of its own, and hence
+`scripts/tests/plugin-freshness.test.sh`, which resolves the path every SKILL.md names and fails
+if it does not exist or is not passed an argument. That test is the rule; this paragraph only
+explains it.
+
+**Why `check-drift.sh` does not cover this.** Three versions are in play and it compares two:
+
+| | what it is |
+| --- | --- |
+| catalog | what the marketplace publishes |
+| installed | what `claude plugin update` last wrote into the install record |
+| **loaded** | **the cache directory THIS SESSION resolved at its first call to the skill** |
+
+`loaded` is pinned at session start and never moves, while the cache keeps every version side by
+side — nine directories for one plugin, measured. An update made mid-session writes a directory
+that session will never read, and nothing reports it: the update prints success, `check-drift.sh`
+prints "current", and the only tell is the `Base directory for this skill:` line the Skill tool
+prints on invocation. Measured 2026-09-25: a session served `refdiff` 1.4.0 from first call to
+last while the records read 1.6.0 then 1.6.1, missing two rules it needed (`grep`: 0 vs 1 for each
+marker; 424 lines against 470).
+
+**It asks once per plugin per session**, keyed on `$CLAUDE_CODE_SESSION_ID`, because the check is
+otherwise self-triggering: `/dev-tools:update-skill` ends by running `claude plugin update`, which
+is exactly what makes `loaded < installed` true. Without the ack it would interrupt every later
+skill in the session about a decision already made.
+
+**The script is copied into each plugin that ships it**, since a plugin's cache directory carries
+only its own subtree. `scripts/plugin-freshness.sh` is canonical; change it there and copy across,
+and the test asserts the copies are byte-identical. `refdiff` and `svc` are separate repos —
+refdiff carries its own copy and calls it from `preflight.sh` (its `skill_freshness` row is the
+worked example); **svc does not have one yet.**
+
 ## Frontmatter
 `name` must equal the directory name. `description` says what the skill does and when to trigger it, in one paragraph, under 1024 characters.
 

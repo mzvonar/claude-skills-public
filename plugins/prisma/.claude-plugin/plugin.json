@@ -1,7 +1,7 @@
 {
   "name": "prisma",
   "description": "Prisma 7 setup (Postgres, libSQL) and migration workflow with drift recovery.",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "author": { "name": "Martin Zvonár", "url": "https://github.com/mzvonar" },
   "homepage": "https://github.com/mzvonar/claude-skills-public",
   "repository": "https://github.com/mzvonar/claude-skills-public",

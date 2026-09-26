@@ -17,3 +17,8 @@ jobs:
         run: bash plugins/describe-changes/tests/run.sh
       - name: workflow tests
         run: bash plugins/workflow/tests/run.sh
+      # Asserts the WIRING, not only the logic: every SKILL.md calling plugin-freshness.sh must
+      # name a path that resolves from its own plugin root and must pass it an argument. The first
+      # rollout of that check was wired to a command that could never work, and nothing went red.
+      - name: plugin-freshness tests
+        run: bash scripts/tests/plugin-freshness.test.sh

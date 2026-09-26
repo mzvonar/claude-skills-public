@@ -12,6 +12,18 @@ A story orchestrator (if the repo has one — see `orchestratorSkills`) captures
 
 Capture is a **standing CLAUDE.md rule** (always-on, fires without being invoked). Processing is **this skill, invoked on demand**. They meet at the inbox.
 
+## Step 0 — is this session reading the CURRENT skill text?
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-freshness.sh" "${CLAUDE_PLUGIN_ROOT}"
+```
+
+Local, no network, and **silent** unless something is wrong. Exit **3** — this session is serving
+an older cached copy of THIS plugin than the one installed; a session pins its version at the first
+call and never moves. Put it to the user (`AskUserQuestion`): reload (`/reload-plugins`) and re-run,
+or carry on knowingly. Asks once per plugin per session. Exit **2** — could not determine, which is
+not a pass. Exit **4** — this call is wired wrong and checked nothing; report it.
+
 ## 0. Settings
 
 Read `.claude/claude-skills.json` → key `lessons` if present; missing keys take the defaults in Configuration. Routes that are absent (no `adrDir`, no wiki, …) fall back as described under Portability.

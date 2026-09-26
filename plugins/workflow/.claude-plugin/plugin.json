@@ -1,7 +1,7 @@
 {
   "name": "workflow",
   "description": "Delivery workflow skills: context handoffs, guideline hygiene, lessons capture, backlog storage and grooming, acceptance-criteria audits, story showcases.",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "author": { "name": "Martin Zvonár", "url": "https://github.com/mzvonar" },
   "homepage": "https://github.com/mzvonar/claude-skills-public",
   "repository": "https://github.com/mzvonar/claude-skills-public",
