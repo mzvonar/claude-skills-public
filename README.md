@@ -55,8 +55,14 @@ Consuming: `claude plugin marketplace update claude-skills-public` then `claude 
 ## Development
 
 ```
+bash scripts/check-all.sh                  # EXACTLY what CI runs (validate.sh + every test suite) — must exit 0 before a push
 scripts/validate.sh                       # manifests, frontmatter, forbidden strings, script syntax, claude plugin validate
-bash plugins/describe-changes/tests/run.sh
-bash plugins/workflow/tests/run.sh
+scripts/check-listing.sh <repo> [--published]  # a github-sourced plugin (refdiff, svc): does the listing carry its plugin.json version?
 claude --plugin-dir plugins/dev-tools     # try a plugin from the working tree
+```
+
+After pushing `main`, watch the `validate` run it started and treat red as not shipped:
+
+```
+gh run watch "$(gh run list --branch main --limit 1 --json databaseId -q '.[0].databaseId')" --exit-status
 ```

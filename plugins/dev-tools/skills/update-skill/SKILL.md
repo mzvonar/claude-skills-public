@@ -1,6 +1,6 @@
 ---
 name: update-skill
-description: Change a skill that was installed from the claude-skills-public marketplace (any `/dev-tools:*`, `/workflow:*`, `/next-js:*`, `/prisma:*`, `/describe-changes:*`, `/refdiff:*`, `/svc:*` skill) the right way — upstream in a sibling checkout, validated, version-bumped, then rolled out with a plugin update. Use whenever the user asks to update, fix, improve, extend, or reword one of these skills, says a skill "is wrong" or "should also…", or you are about to edit a file under ~/.claude/plugins/cache/ or copy a plugin skill into .claude/skills/. Never edit the cached copy and never vendor it into the repo.
+description: Change a skill that was installed from the claude-skills-public marketplace (any `/dev-tools:*`, `/workflow:*`, `/next-js:*`, `/prisma:*`, `/describe-changes:*`, `/refdiff:*`, `/svc:*` skill) the right way — upstream in a sibling checkout, validated, version-bumped, then rolled out with a plugin update. Use whenever the user asks to update, fix, improve, extend, or reword one of these skills, says a skill "is wrong" or "should also…", or you are about to edit a file under ~/.claude/plugins/cache/ or copy a plugin skill into .claude/skills/. ALSO use it to release or version-bump `refdiff` or `svc` for ANY change, code-only included ("ship it", "release", "bump the version") — their listing here needs a second push. Never edit the cached copy and never vendor it into the repo.
 ---
 
 # Update a marketplace skill
@@ -42,6 +42,28 @@ ls ~/.claude/plugins/cache/claude-skills-public/<plugin>/*/skills/<skill>/
 
 Skills of `refdiff` and `svc` live in their own repos (`mzvonar/refdiff`, `mzvonar/svc`); everything
 else is in `mzvonar/claude-skills-public` under `plugins/<plugin>/skills/<skill>/`.
+
+### Releasing `refdiff` or `svc` — every release, not only a skill edit
+
+A release of either is **two pushes**, and the second is the one that gets forgotten, because
+nothing about a release in THEIR repo ever looks at this one:
+
+1. In the plugin's repo: bump `.claude-plugin/plugin.json` and push it with the change. This is the
+   version `claude plugin update` compares — the push that actually ships (§4 has the measurement).
+2. Here: set the plugin's entry in `.claude-plugin/marketplace.json` to the same version, run
+   `bash scripts/check-all.sh`, commit `chore: <plugin> <version> in the listing`, push `main`, and
+   watch the CI run that push started (§4). Skipped, the listing lies and `validate.sh` fails on it.
+
+Check the pair from the plugin's side, before and after:
+
+```bash
+bash "$REPOS/claude-skills-public/scripts/check-listing.sh" "<plugin checkout>"               # working tree
+bash "$REPOS/claude-skills-public/scripts/check-listing.sh" "<plugin checkout>" --published   # origin/main
+```
+
+Exit 0 agrees, 1 disagrees (it prints both versions and the fix), 2 could not tell — never a pass.
+A code-only release (refdiff's annotator, svc's CLI) needs this exactly as much as a skill edit:
+refdiff 1.8.0 shipped from its own repo with the listing left at 1.7.3.
 
 ## 1. Get a checkout next to this repo
 
@@ -88,16 +110,30 @@ upstream in silence. Install the plugin and delete the link.
 
 ## 4. Validate, bump, push
 
-```bash
-cd "$REPOS/claude-skills-public"
-scripts/validate.sh
-bash plugins/<plugin>/tests/run.sh 2>/dev/null || true     # where tests exist
-```
-
 Bump `version` in `plugins/<plugin>/.claude-plugin/plugin.json` AND the plugin's entry in
 `.claude-plugin/marketplace.json` (patch: fix or wording; minor: new skill or config key; major:
-renamed skill or changed default). Commit both with the change and push `main`, subject to the
-user's commit and push policy. No bump means no consumer ever receives the change.
+renamed skill or changed default). No bump means no consumer ever receives the change. Then run
+exactly what CI runs — the `validate` workflow calls this same script:
+
+```bash
+cd "$REPOS/claude-skills-public"
+bash scripts/check-all.sh          # validate.sh + every plugin and maintainer test suite; exit 0 or do not push
+```
+
+It must exit 0. Do not run a subset and do not swallow a failure (this step used to read
+`tests/run.sh 2>/dev/null || true`): the suites that only CI ran — `describe-changes`' version
+parity above all — were red on eleven pushes that had each been reported as done.
+
+Commit and push `main`, subject to the user's commit and push policy, then **watch the run the push
+started** — a push is not shipped until it is green:
+
+```bash
+sleep 5; RUN=$(gh run list --repo mzvonar/claude-skills-public --branch main --commit "$(git rev-parse HEAD)" --limit 1 --json databaseId -q '.[0].databaseId')
+gh run watch "$RUN" --repo mzvonar/claude-skills-public --exit-status   # blocks ~1-2 min; non-zero = red
+```
+
+Red: read `gh run view "$RUN" --log-failed`, fix, push, watch again — and say so, never "done". An
+empty `RUN` means the run has not registered yet; wait and ask again rather than skipping the watch.
 
 `claude plugin tag plugins/<plugin>` checks the two manifests agree and tags the release — cheaper
 than learning of a mismatch from a consumer that never received the update.
@@ -109,7 +145,8 @@ the listing does not lie — but the entry alone changes nothing. Measured: with
 and the repo's manifest still 1.0.0, `claude plugin update` reported "already at the latest version
 (1.0.0)" against a cache four days stale, and the only way through was uninstalling and deleting the
 cache directory by hand. Note also that `claude plugin tag` compares two manifests in ONE repo, so
-for these it cannot see the pair — check them by eye.
+for these it cannot see the pair — `scripts/check-listing.sh` does (see "Releasing `refdiff` or
+`svc`" under §0), and `validate.sh` runs the same script when their repo is checked out beside this.
 
 ## 5. Roll it out here
 

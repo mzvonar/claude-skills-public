@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # validate.sh — structural checks for every plugin in this marketplace. Run from anywhere.
-#   - plugin.json version == marketplace.json entry version
+#   - plugin.json version == marketplace.json entry version (a `github` entry: via check-listing.sh,
+#     against its repo checked out beside this one)
 #   - every skills/<dir>/SKILL.md has frontmatter name == <dir> and a description <= 1024 chars
 #   - no machine-, user- or project-specific strings (see FORBIDDEN)
 #   - `claude plugin validate` on the marketplace and each plugin, when the CLI is available
@@ -113,15 +114,17 @@ for name, e in entries.items():
             sib = os.path.normpath(os.path.join(root, "..", repo.split("/")[-1]))
             sibpj = os.path.join(sib, ".claude-plugin", "plugin.json")
             if os.path.exists(sibpj):
-                # A corrupt sibling manifest must FAIL this entry, not raise out of the loop and
-                # leave every later plugin unvalidated behind a traceback.
-                try:
-                    sv = json.load(open(sibpj)).get("version")
-                except Exception as exc:
-                    print(f"FAIL: {name}: {sibpj} is unreadable ({exc.__class__.__name__})"); ok = False
-                else:
-                    if sv != e.get("version"):
-                        print(f"FAIL: {name}: {sibpj} version {sv} != marketplace {e.get('version')}"); ok = False
+                # The comparison itself is scripts/check-listing.sh — the same script a plugin's
+                # own repo runs at release time, so the two sides cannot drift apart on what "the
+                # listing agrees" means. Any non-zero exit fails the entry: 2 is "could not
+                # determine" (a corrupt sibling manifest), never a pass — and a FAIL line, not a
+                # traceback that would leave every later plugin unvalidated.
+                import subprocess
+                r = subprocess.run(["bash", os.path.join(root, "scripts", "check-listing.sh"), sib],
+                                   capture_output=True, text=True)
+                if r.returncode != 0:
+                    detail = " / ".join(l.strip() for l in (r.stdout + r.stderr).splitlines() if l.strip())
+                    print(f"FAIL: {name}: {detail}"); ok = False
             else:
                 print(f"note: {name}: external repo not checked out beside this one — version pairing SKIPPED, not verified")
 sys.exit(0 if ok else 1)

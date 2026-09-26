@@ -121,6 +121,15 @@ A `github`-sourced entry keeps its manifest in its own repo, so `validate.sh` ca
 versions when that repo is checked out beside this one — it does, and **says SKIPPED when it
 cannot**, because an absent check and a passing one must not look alike.
 
+**A release of such a plugin is two pushes** — its own `plugin.json` (what `claude plugin update`
+compares) and its entry here (or the listing lies) — and a release happens in the OTHER repo, where
+`validate.sh` never runs: refdiff 1.8.0 shipped with the listing left at 1.7.3. So the pairing lives
+in `scripts/check-listing.sh <plugin checkout> [--published]`, callable from that repo's release
+step, and `validate.sh` calls the same script, so the two cannot disagree about what "agrees" means.
+`--published` reads this repo's `origin/main` rather than the working tree: after both pushes, a
+listing bumped here and never pushed must not read as done. The plugins' own repos say to run it
+(refdiff's `CLAUDE.md`, "Releasing").
+
 Be precise about what it can and cannot tell you, because the first version of this paragraph was
 not. It compares the listing against **whatever is in the sibling working tree**, which may be a
 stale clone, a dirty tree, or a branch nobody published. The one hit it produced on introduction
@@ -155,6 +164,20 @@ Two things it pins are worth knowing about before editing either script:
 
 ## Frontmatter
 `name` must equal the directory name. `description` says what the skill does and when to trigger it, in one paragraph, under 1024 characters.
+
+## CI is part of shipping
+
+`.github/workflows/validate.yml` runs on every push and runs exactly one thing,
+`bash scripts/check-all.sh` — validate.sh plus every plugin and maintainer test suite. Run the same
+script before pushing; it must exit 0. After pushing `main`, watch the run the push started
+(`gh run watch <id> --exit-status`, recipe in `update-skill` §4) and treat red as NOT shipped.
+
+Why this is written down: by 2026-09-26 the workflow had failed 16 times in 83 runs, and not one
+failure was flaky — eleven were `describe-changes`' version parity, three a forbidden
+machine-specific string, two a path bug in the first commits. Each red push had been reported as
+done and surfaced only as a failure e-mail, because the steps only CI ran were not the steps the
+instructions named, and the instructions ran plugin tests as `… || true`. One script for both
+closes the first gap; watching the run closes the second.
 
 ## Versioning
 The plugin is the unit of versioning. Bump `version` in the plugin's `plugin.json` and the matching entry in `.claude-plugin/marketplace.json` in the same commit; `scripts/validate.sh` fails when they disagree.

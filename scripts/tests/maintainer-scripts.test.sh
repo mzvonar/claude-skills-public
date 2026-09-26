@@ -107,6 +107,7 @@ R=$(printf '%s\n' "$OUT" | grep -c '^thing ') || true
 mkmp() { # mkmp <root> <catalog-version>
   mkdir -p "$1/.claude-plugin" "$1/plugins" "$1/scripts"
   cp "$HERE/scripts/validate.sh" "$1/scripts/validate.sh"
+  cp "$HERE/scripts/check-listing.sh" "$1/scripts/check-listing.sh"   # validate.sh's external pairing
   printf '{"name":"m","owner":{"name":"t"},"plugins":[{"name":"ext","source":{"source":"github","repo":"t/ext"},"version":"%s","description":"d","author":{"name":"t"},"category":"c"}]}\n' "$2" \
     > "$1/.claude-plugin/marketplace.json"; }
 mksib() { mkdir -p "$1/.claude-plugin"; printf '{"name":"ext","version":"%s"}\n' "$2" > "$1/.claude-plugin/plugin.json"; }
@@ -170,6 +171,49 @@ mksib "$TMP/w5/ext" "0.0.1"
 OUT=$( cd "$W" && bash scripts/validate.sh 2>&1 ); E=$?
 case "$E:$OUT" in 1:*"0.0.1"*) ok "validate: trailing slash in repo still finds the sibling" ;;
   *) bad "validate/trailing-slash" "exit=$E out='$OUT'" ;; esac
+
+# ============ check-listing.sh ==============================================
+# The pairing validate.sh does, called from the PLUGIN's side of a release: refdiff 1.8.0 shipped
+# from its own repo and the listing stayed at 1.7.3, because validate.sh only ever runs here.
+CL="$TMP/cl/mp"; mkmp "$CL" "1.8.0"; mksib "$TMP/cl/ext" "1.8.0"
+OUT=$(bash "$CL/scripts/check-listing.sh" "$TMP/cl/ext" 2>&1); E=$?
+case "$E:$OUT" in 0:*agrees*) ok "check-listing: plugin.json and listing agree → 0" ;;
+  *) bad "listing/agree" "exit=$E out='$OUT'" ;; esac
+
+mksib "$TMP/cl/ext" "1.9.0"
+OUT=$(bash "$CL/scripts/check-listing.sh" "$TMP/cl/ext" 2>&1); E=$?
+case "$E:$OUT" in 1:*1.9.0*1.8.0*"fix:"*) ok "check-listing: a bump the listing lacks → 1, both versions and the fix" ;;
+  *) bad "listing/behind" "exit=$E out='$OUT'" ;; esac
+
+mkdir -p "$TMP/cl/other/.claude-plugin"; printf '{"name":"other","version":"1.0.0"}\n' > "$TMP/cl/other/.claude-plugin/plugin.json"
+OUT=$(bash "$CL/scripts/check-listing.sh" "$TMP/cl/other" 2>&1); E=$?
+case "$E:$OUT" in 1:*"no entry"*) ok "check-listing: a plugin the listing does not carry → 1" ;;
+  *) bad "listing/no-entry" "exit=$E out='$OUT'" ;; esac
+
+printf '{oops' > "$TMP/cl/ext/.claude-plugin/plugin.json"
+OUT=$(bash "$CL/scripts/check-listing.sh" "$TMP/cl/ext" 2>&1); E=$?
+case "$E:$OUT" in 2:*unreadable*) ok "check-listing: an unreadable manifest → 2, not a pass" ;;
+  *) bad "listing/corrupt" "exit=$E out='$OUT'" ;; esac
+
+# --published asks the question AFTER both pushes: a listing bumped in the working tree and never
+# pushed agrees locally and must NOT agree against origin/main.
+PUB="$TMP/pub/mp"; mkmp "$PUB" "1.8.0"; mksib "$TMP/pub/ext" "1.9.0"
+git init -q --bare "$TMP/pub/origin.git"
+git -C "$PUB" init -q -b main && git -C "$PUB" add -A \
+  && git -C "$PUB" -c user.email=a@b -c user.name=t commit -q -m listing \
+  && git -C "$PUB" remote add origin "$TMP/pub/origin.git" && git -C "$PUB" push -q origin main 2>/dev/null
+sed -i 's/"version":"1.8.0"/"version":"1.9.0"/' "$PUB/.claude-plugin/marketplace.json"   # bumped, NOT pushed
+OUT=$(bash "$PUB/scripts/check-listing.sh" "$TMP/pub/ext" 2>&1); E=$?
+case "$E" in 0) ok "check-listing: the unpushed local bump agrees with the working tree" ;;
+  *) bad "listing/local" "exit=$E out='$OUT'" ;; esac
+OUT=$(bash "$PUB/scripts/check-listing.sh" "$TMP/pub/ext" --published 2>&1); E=$?
+case "$E:$OUT" in 1:*1.9.0*1.8.0*origin/main*) ok "check-listing --published: the same bump, unpushed → 1 against origin/main" ;;
+  *) bad "listing/published" "exit=$E out='$OUT'" ;; esac
+
+git -C "$PUB" remote remove origin
+OUT=$(bash "$PUB/scripts/check-listing.sh" "$TMP/pub/ext" --published 2>&1); E=$?
+case "$E:$OUT" in 2:*"not verified"*) ok "check-listing --published: no origin → 2, not a pass" ;;
+  *) bad "listing/no-origin" "exit=$E out='$OUT'" ;; esac
 
 echo ""
 echo "  ${PASS} passed, ${FAIL} failed"
