@@ -38,7 +38,20 @@ fi
 [ -f "$CATALOG" ] || { echo "marketplace '$MP' is not known (add it: claude plugin marketplace add mzvonar/$MP)" >&2; exit 2; }
 [ -f "$INSTALLED" ] || { echo "no plugins installed" >&2; exit 2; }
 
-PROJECT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+# The MAIN checkout, not the current worktree. Project-scope install records are keyed to the
+# path the plugin was installed from — the main checkout — while `--show-toplevel` inside a git
+# worktree returns the WORKTREE. Those never match, so every project-scope plugin was filtered
+# out and the table listed only user-scope ones while reporting itself as the whole answer.
+# Measured 2026-09-26 from a worktree: 2 rows printed, 15 plugins installed, 13 of them silently
+# skipped — including four this very script had just been asked to update. `--git-common-dir`
+# resolves to the main checkout's .git from inside any worktree, and to the ordinary .git
+# otherwise, so one expression covers both.
+GITCOMMON="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+if [ -n "$GITCOMMON" ]; then
+  PROJECT="$(dirname "$GITCOMMON")"
+else
+  PROJECT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+fi
 export MP CATALOG INSTALLED PROJECT JSON
 ONLY_CSV="$(IFS=,; echo "${ONLY[*]:-}")"; export ONLY_CSV
 
