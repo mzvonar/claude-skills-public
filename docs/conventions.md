@@ -86,18 +86,35 @@ it has asked. The script never can.
 
 **The script is copied into each plugin that ships it**, since a plugin's cache directory carries
 only its own subtree. `scripts/plugin-freshness.sh` is canonical; change it there and copy across,
-and the test asserts the copies are byte-identical. `refdiff` and `svc` are separate repos and
+and the test asserts the copies here are byte-identical. `refdiff` and `svc` are separate repos and
 carry their own: refdiff calls it from `preflight.sh` (its `skill_freshness` row is the worked
-example), svc from `dev-services`' step 0.
+example), svc from `dev-services`' opening step.
 
-**Every skill in this marketplace that has a numbered first step is wired** — 20 of them, a count
-`scripts/tests/plugin-freshness.test.sh` pins as an invariant so one silently deleted fails rather
-than just removing a green row. The skills with no numbered steps are exempt by shape, not by
-oversight; re-derive the census with:
+Those two are checked too, and on a deliberately weaker rule: **CODE identity, not byte identity.**
+A copy in another repo may add a provenance comment saying where the canonical lives — refdiff's
+does — and forbidding that would fail the honest copy while catching no drift, so the comparison
+skips whole-line comments and every line that can BEHAVE must match exactly. It runs from both ends
+(`scripts/tests/plugin-freshness.test.sh` here, `scripts/tests/svc.test.py` there) and only when the
+other checkout sits beside this one; when it does not, the row says **SKIPPED**, because an absent
+check and a passing one must not read the same. Before this, nothing anywhere compared them and the
+claim rested on somebody remembering.
+
+**Every skill in this marketplace that has a numbered first step is wired**, and
+`scripts/tests/plugin-freshness.test.sh` asserts that as a **derived set, not a count**. The count
+came first and was the same bug one level up: it catches a block that is DELETED and misses one that
+is never ADDED — measured, adding a skill with numbered steps and no block left the number at 20
+with the suite green, and so did a compensating pair (remove one, add one). So the test enumerates
+every SKILL.md with a numbered first step, subtracts the wired ones, and fails naming whatever is
+left; the only way to be absent from that set is an `EXEMPT` entry that has to give a reason. Two
+step STYLES count as a first step — a `1.` list item and a `## Step 1 —` heading — and both the
+census and the reachability check match both, because they disagreed once and the reachability
+assertion was silently blind to every skill of the second shape.
+
+Re-derive it by hand with:
 
 ```bash
 for f in $(find plugins -name SKILL.md); do grep -q plugin-freshness "$f" || \
-  { grep -qE '^\s*(###? )?[*]{0,2}1\.' "$f" && echo "unwired: $f"; }; done
+  { grep -qE '^\s*(###? )?[*]{0,2}1\.|^## Step 1' "$f" && echo "unwired: $f"; }; done
 ```
 
 A `github`-sourced entry keeps its manifest in its own repo, so `validate.sh` can only pair the
@@ -114,6 +131,27 @@ is the kind of claim the section above exists to stop. It cannot distinguish "th
 wrong" from "your clone is old"; it flags that two numbers disagree, and you go and look.
 It also never runs in CI, which checks out this repo alone — so CI always prints SKIPPED, and the
 pairing is enforced on a maintainer's machine only.
+
+## The maintainer scripts are code, and they have a test
+
+`check-drift.sh` and `validate.sh` gate every rollout, and for a long time nothing executed either —
+they sat outside the plugin test runners (which glob `skills/*/scripts/*.sh`) and outside
+`validate.sh`'s own syntax sweep, so a broken one would have shipped green. Both now sweep `scripts`
+as well as `plugins`, and `scripts/tests/maintainer-scripts.test.sh` runs them against **synthetic
+git repos and a synthetic `CLAUDE_CONFIG_DIR`**, never the machine's own install record.
+
+Two things it pins are worth knowing about before editing either script:
+
+- **A project-scope install record is keyed to the path it was installed FROM**, so `check-drift.sh`
+  accepts EITHER the tree you are standing in or — when that is a linked worktree — the main
+  checkout. Not one instead of the other: a swap moves the disappearing-rows bug to submodules and
+  to records installed from inside a worktree. The discriminator is `--git-dir != --git-common-dir`,
+  never the shape of a path. Measured from a worktree: **2 rows where 10 belong**, with a confident
+  `stale:` line printed over the gap.
+- **`git rev-parse` ECHOES an unrecognised option and exits 0**, so on git < 2.31 `--path-format`
+  comes back as a two-line string, `dirname` reads its leading `--` as an option of its own, and the
+  script dies under `set -e` with exit 1 — which its own header documents as "at least one stale".
+  Only a run from a linked worktree reaches that `dirname`, so that is where the row lives.
 
 ## Frontmatter
 `name` must equal the directory name. `description` says what the skill does and when to trigger it, in one paragraph, under 1024 characters.
