@@ -7,15 +7,6 @@ description: Run Prisma migrations and regenerate the Prisma client safely — p
 
 ## Preflight
 
-0. **Is this session reading the CURRENT skill text?**
-   ```bash
-   bash "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/claude-skills-public/scripts/plugin-freshness.sh"
-   ```
-   Local, no network, silent when current. **Exit 3** = this session is serving an older cached
-   version than the one installed — a session pins its version at the first call to a skill and
-   never moves, and nothing else reports it. Put it to the user with `AskUserQuestion`: reload
-   (`/reload-plugins`) and re-run, or carry on knowingly. Exit 2 or no such script = undetermined,
-   carry on. Why: `docs/conventions.md`.
 1. **Package manager** — `pnpm-lock.yaml` → pnpm, `yarn.lock` → yarn, `package-lock.json` → npm, `bun.lockb` → bun. `<pm> exec prisma …` below; prefer the repo's own scripts (`db:migrate`, `db:generate`, …) when `package.json` has them, because they carry the repo's flags and env wiring.
 2. **Schema location** — `prisma.config.ts` at the project root if it exists (Prisma 7: connection URL lives there, not in the schema), else `prisma/schema.prisma`. Override with `schemaPath`.
 3. **Env file** — `prisma.config.ts` typically loads `envFile` (default `.env.local`) via dotenv before reading the connection URL, so commands need no `DATABASE_URL=…` prefix. Check it exists before any Prisma command:

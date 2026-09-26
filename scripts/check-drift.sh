@@ -38,26 +38,55 @@ fi
 [ -f "$CATALOG" ] || { echo "marketplace '$MP' is not known (add it: claude plugin marketplace add mzvonar/$MP)" >&2; exit 2; }
 [ -f "$INSTALLED" ] || { echo "no plugins installed" >&2; exit 2; }
 
-# The MAIN checkout, not the current worktree. Project-scope install records are keyed to the
-# path the plugin was installed from — the main checkout — while `--show-toplevel` inside a git
-# worktree returns the WORKTREE. Those never match, so every project-scope plugin was filtered
-# out and the table listed only user-scope ones while reporting itself as the whole answer.
-# Measured 2026-09-26 from a worktree: 2 rows printed, 15 plugins installed, 13 of them silently
-# skipped — including four this very script had just been asked to update. `--git-common-dir`
-# resolves to the main checkout's .git from inside any worktree, and to the ordinary .git
-# otherwise, so one expression covers both.
-GITCOMMON="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
-if [ -n "$GITCOMMON" ]; then
-  PROJECT="$(dirname "$GITCOMMON")"
-else
-  PROJECT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+# Project-scope install records are keyed to the path the plugin was installed FROM. Inside a git
+# worktree `--show-toplevel` returns the WORKTREE, which never matches a record written from the
+# main checkout, so every project-scope plugin was filtered out while the table still printed a
+# confident `stale:` line. Measured 2026-09-26 from a worktree: 2 rows where 10 belong — the two
+# user-scope entries survived the filter and 8 project/local ones vanished. (Not 13: the install
+# record held 15 entries, but 5 of them belong to other marketplaces and this script never reports
+# those, so they were never the bug's to hide.)
+#
+# So we accept EITHER path, rather than swapping one for the other. A first attempt used
+# `dirname(--git-common-dir)` alone, which fixes worktrees and breaks two other shapes — measured
+# with git 2.43:
+#
+#   shape              dirname(--git-common-dir)    --show-toplevel
+#   linked worktree    the main checkout  ✅         the worktree
+#   submodule          <super>/.git/modules  ✗       <super>/sub  ✅
+#   bare repo          <parent of repo.git>  ✗       (fails → pwd)
+#
+# i.e. it moved the same disappearing-rows bug to submodules, and broke a record installed from
+# inside a worktree, which used to match. `--git-dir` equals `--git-common-dir` everywhere EXCEPT
+# a linked worktree, so that inequality is the clean discriminator — no guessing from path shape.
+TOP="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+GIT_DIR_ABS="$(git rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
+GIT_COMMON_ABS="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+# git < 2.31 has no `--path-format`, and `rev-parse` ECHOES an unrecognised option and exits 0
+# rather than failing — so `|| true` never fires and these hold a two-line string starting with
+# the flag. `dirname` then errors out under `set -e` and the script exits 1, which its own header
+# documents as "at least one stale". Accept only a single absolute path.
+for _v in GIT_DIR_ABS GIT_COMMON_ABS; do
+  eval "_val=\$$_v"
+  case "$_val" in
+    /*) [ "$_val" = "${_val%%$'\n'*}" ] || eval "$_v=''" ;;
+    *)  eval "$_v=''" ;;
+  esac
+done
+PROJECT="$TOP"
+PROJECT_MAIN="$TOP"
+if [ -n "$GIT_COMMON_ABS" ] && [ -n "$GIT_DIR_ABS" ] && [ "$GIT_DIR_ABS" != "$GIT_COMMON_ABS" ]; then
+  PROJECT_MAIN="$(dirname "$GIT_COMMON_ABS")"   # a LINKED worktree, and only that
 fi
-export MP CATALOG INSTALLED PROJECT JSON
+export MP CATALOG INSTALLED PROJECT PROJECT_MAIN JSON
 ONLY_CSV="$(IFS=,; echo "${ONLY[*]:-}")"; export ONLY_CSV
 
 STALE=$(python3 - <<'PY'
 import json, os, sys
-mp, catalog, installed, project = os.environ["MP"], os.environ["CATALOG"], os.environ["INSTALLED"], os.environ["PROJECT"]
+mp, catalog, installed = os.environ["MP"], os.environ["CATALOG"], os.environ["INSTALLED"]
+# Two acceptable paths, not one: the tree we are standing in, and — when that is a linked
+# worktree — the main checkout a project-scope record would have been written from. Matching
+# either is what stops a record disappearing for one repo shape or the other.
+projects = {os.path.realpath(p) for p in (os.environ["PROJECT"], os.environ["PROJECT_MAIN"]) if p}
 only = set(filter(None, os.environ["ONLY_CSV"].split(",")))
 cat = {p["name"]: p.get("version") for p in json.load(open(catalog))["plugins"]}
 inst = json.load(open(installed)).get("plugins", {})
@@ -67,7 +96,7 @@ for key, entries in inst.items():
     if m != mp or (only and name not in only): continue
     for e in entries:
         scope = e.get("scope")
-        if scope in ("project", "local") and os.path.realpath(e.get("projectPath", "")) != os.path.realpath(project): continue
+        if scope in ("project", "local") and os.path.realpath(e.get("projectPath", "")) not in projects: continue
         have = e.get("version"); want = cat.get(name)
         state = "unknown" if want is None else ("current" if have == want else "stale")
         rows.append((name, scope, have, want, state))

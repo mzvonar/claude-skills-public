@@ -81,8 +81,12 @@ while IFS= read -r f; do
     *.py) python3 -m py_compile "$f" 2>/dev/null || err "python syntax: $f" ;;
     *.mjs|*.js) command -v node >/dev/null && { node --check "$f" 2>/dev/null || err "node syntax: $f"; } ;;
   esac
-done < <(find plugins -type f \( -name '*.sh' -o -name '*.py' -o -name '*.mjs' -o -name '*.js' \) -not -path '*/node_modules/*' -not -path '*/fixtures/*')
-find plugins -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
+# `scripts` as well as `plugins`: this repo's own maintainer scripts sat outside every sweep —
+# not syntax-checked here, and not reached by the plugin test runners, which glob
+# `skills/*/scripts/*.sh`. A broken `check-drift.sh` or `plugin-freshness.sh` would have shipped
+# green. Found by review, 2026-09-26.
+done < <(find plugins scripts -type f \( -name '*.sh' -o -name '*.py' -o -name '*.mjs' -o -name '*.js' \) -not -path '*/node_modules/*' -not -path '*/fixtures/*')
+find plugins scripts -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 
 # claude CLI validation
 if command -v claude >/dev/null 2>&1; then

@@ -33,6 +33,12 @@
 # 3 rather than 1 on purpose: the skill still MEASURES correctly, it may simply not know a
 # newer rule, so "carry on" stays a legitimate answer and the only thing ruled out is settling
 # it silently. That is the same contract refdiff's preflight uses for `action = ask`.
+#
+# 2 IS NOT A PASS and a caller must not treat it as one. It means this run could not answer —
+# the record was absent, malformed, or named no version for this plugin — so the session may be
+# serving stale text and nobody knows. Until 2026-09-26 every one of those inputs printed
+# "CURRENT" and exited 0 instead, which is the same silence-reads-as-clean failure the script
+# was written to catch, inside the script itself. Both are now distinguishable, both are tested.
 set -uo pipefail
 
 DIR="" ; QUIET=0 ; JSON=0
@@ -58,12 +64,20 @@ case "$DIR" in
   */plugins/cache/*) ;;
   *) say "plugin_freshness   = skipped-not-a-plugin-install ($DIR)"; exit 0 ;;
 esac
-REST="${DIR#*/plugins/cache/}"
+# `##`, not `#`: a path containing `/plugins/cache/` twice belongs to the INNERMOST one.
+REST="${DIR##*/plugins/cache/}"
+# Require three components BEFORE splitting. `${REST#*/}` returns the string unchanged when there
+# is no `/`, so an emptiness test can never fail here — the guard that used to sit below this was
+# unreachable, and `…/plugins/cache/csp` parsed as marketplace=csp, plugin=csp, version=csp, then
+# reported CURRENT with `loaded = csp` on screen. Silence reading as clean, in the script whose
+# whole job is to stop exactly that.
+case "$REST" in
+  */*/*) ;;
+  *) echo "plugin-freshness: not a <marketplace>/<plugin>/<version> path: $DIR" >&2; exit 2 ;;
+esac
 MP="${REST%%/*}"        ; REST="${REST#*/}"
 PLUGIN="${REST%%/*}"    ; REST="${REST#*/}"
 LOADED="${REST%%/*}"
-[ -n "$MP" ] && [ -n "$PLUGIN" ] && [ -n "$LOADED" ] || {
-  echo "plugin-freshness: could not read marketplace/plugin/version from $DIR" >&2; exit 2; }
 
 PLUGROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins"
 
@@ -111,11 +125,25 @@ say "  loaded             = $LOADED"
 say "  installed          = ${INSTALLED:-unknown}"
 say "  catalog            = ${CATALOG:-unknown}"
 
+# UNKNOWN IS NOT CURRENT, and conflating them is the whole bug class this script exists for.
+# Both readers end in `|| true`, so a missing config dir, a corrupt record, a renamed marketplace
+# or no python3 on PATH all yield an empty INSTALLED — and an empty operand makes `behind` false,
+# which used to fall through to "CURRENT" and exit 0. Measured before this guard: a corrupt
+# installed_plugins.json with the catalog reading 1.7.0 and the session serving 1.4.0 printed
+# `action = proceed` / `CURRENT`, and refdiff's preflight turned that into the affirmative
+# `current (serving 1.4.0)` — a claim neither of them had measured.
+#
+# INSTALLED is the one that must be known: it is the comparison the session-skew check rests on.
+# A missing CATALOG only costs the second, weaker arm, so it degrades to a warning rather than
+# taking the whole answer down with it.
 ACTION="proceed"; MSG=""
-if behind "$LOADED" "${INSTALLED:-}"; then
+if [ -z "${INSTALLED:-}" ]; then
+  ACTION="unknown"
+  MSG="Could not read an installed version for $PLUGIN@$MP from $PLUGROOT/installed_plugins.json (absent, unreadable, malformed, or no record for this plugin). This is NOT a pass: the session may be serving stale text and this run cannot tell. Treat it as undetermined."
+elif behind "$LOADED" "$INSTALLED"; then
   ACTION="ask"
   MSG="This session is SERVING $PLUGIN $LOADED while $INSTALLED is installed. The version a session loads is pinned when it first runs the skill and never moves, so an update made during the session does not reach it. PUT IT TO THE USER: reload (/reload-plugins, or restart) and re-run, so the newer text is the one being followed -- or carry on with $LOADED, which still works and may simply not know a newer rule."
-elif behind "${INSTALLED:-}" "${CATALOG:-}"; then
+elif [ -n "${CATALOG:-}" ] && behind "$INSTALLED" "$CATALOG"; then
   ACTION="ask"
   MSG="$PLUGIN $INSTALLED is installed while the catalog publishes $CATALOG. PUT IT TO THE USER: update (claude plugin update $PLUGIN@$MP, or scripts/check-drift.sh --update) then reload -- or carry on."
 fi
@@ -126,11 +154,17 @@ if [ "$JSON" = 1 ]; then
     "$PLUGIN" "$MP" "$LOADED" "${INSTALLED:-}" "${CATALOG:-}" "$ACTION"
 fi
 
-if [ "$ACTION" = "ask" ]; then
-  say ""
-  say "ASK: $MSG"
-  exit 3
-fi
+case "$ACTION" in
+  ask)
+    say ""
+    say "ASK: $MSG"
+    exit 3 ;;
+  unknown)
+    say ""
+    say "UNKNOWN: $MSG"
+    exit 2 ;;
+esac
+[ -n "${CATALOG:-}" ] || say "  note: catalog version unknown — only the session-vs-installed check ran"
 say ""
 say "CURRENT"
 exit 0
