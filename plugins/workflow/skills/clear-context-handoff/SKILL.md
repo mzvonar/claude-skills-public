@@ -18,12 +18,14 @@ and hand back a ready-to-paste kickoff prompt. Two deliverables: (1) a **handoff
    Local, no network, **silent** unless something is wrong. Exit **3** — this session is serving
    an older cached copy of THIS plugin than the one installed; a session pins its version at the
    first call and never moves. Put it to the user (`AskUserQuestion`): reload (`/reload-plugins`)
-   and re-run, or carry on knowingly. Asks once per plugin per session. Exit **2** — could not
-   determine, which is not a pass. Exit **4** — wired wrong, checked nothing; report it.
+   and re-run, or carry on knowingly — and if you already put this question for this plugin in this
+   session, just note it and carry on; the check is stateless and will keep reporting. Exit **2** —
+   could not determine, which is not a pass. Exit **4**, or `No such file` / exit **127** — wired
+   wrong, checked nothing; report it. Why: `docs/conventions.md` in `mzvonar/claude-skills-public`.
 1. **Resolve settings.** Read `.claude/claude-skills.json` → key `clear-context-handoff` if it
    exists; every missing key takes its default from Configuration. Detect what isn't configured
    (verify command, commit convention) before writing anything.
-1. **Write/refresh the handoff doc** at `<handoffDir>/<handoffFilePattern>` (default
+2. **Write/refresh the handoff doc** at `<handoffDir>/<handoffFilePattern>` (default
    `docs/handoffs/handoff-<YYYY-MM-DD>.md`; take the date from the session's current-date context).
    One canonical "latest" doc per workstream: same day → rewrite it, git keeps history. **When a
    new date replaces an older handoff, delete the old dated file and update every pointer to it**
@@ -33,9 +35,9 @@ and hand back a ready-to-paste kickoff prompt. Two deliverables: (1) a **handoff
    A future you with **no memory of this session** must be able to continue.
    If `plannerDocs` is set, **keep each planner doc in step** in the same change: mark finished
    items DONE and point its "DO NEXT" at the right item.
-2. **Commit it** so the tree is clean for the fresh session — subject per `commitConvention`
+3. **Commit it** so the tree is clean for the fresh session — subject per `commitConvention`
    (e.g. `docs: refresh handoff for <workstream>`). Then apply `pushPolicy` (default: ask).
-3. **Give the kickoff prompt** in chat (code block) using the template below.
+4. **Give the kickoff prompt** in chat (code block) using the template below.
 
 ## Handoff doc template
 

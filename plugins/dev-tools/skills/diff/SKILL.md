@@ -19,8 +19,11 @@ Arguments passed through to `git diff`: $ARGUMENTS
    Local, no network, **silent** unless something is wrong. Exit **3** — this session is serving
    an older cached copy of THIS plugin than the one installed; a session pins its version at the
    first call and never moves. Put it to the user (`AskUserQuestion`): reload (`/reload-plugins`)
-   and re-run, or carry on knowingly. Asks once per plugin per session. Exit **2** — could not
-   determine, which is not a pass. Exit **4** — wired wrong, checked nothing; report it.
+   and re-run, or carry on knowingly — and if you already put this question for this plugin in this
+   session, just note it and carry on; the check is stateless and will keep reporting. Exit **2** —
+   could not determine, which is not a pass. Exit **4**, or `No such file` / exit **127** — this
+   call is wired wrong and checked nothing; report it rather than continuing. Why:
+   `docs/conventions.md` in `mzvonar/claude-skills-public`.
 1. Run the diff script:
    ```
    bash "${CLAUDE_PLUGIN_ROOT}/skills/diff/scripts/generate-diff.sh" $ARGUMENTS

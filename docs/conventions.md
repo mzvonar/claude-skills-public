@@ -58,17 +58,31 @@ explains it.
 | **loaded** | **the cache directory THIS SESSION resolved at its first call to the skill** |
 
 `loaded` is pinned at session start and never moves, while the cache keeps every version side by
-side — nine directories for one plugin, measured. An update made mid-session writes a directory
+side. **OBSERVATION, not an invariant:** on 2026-09-26 the `refdiff` cache held 12 version
+directories — it read "nine, measured" here when written a day earlier — and the eight plugins
+ranged from 3 to 12. Only "more than one" has to hold for the rest of this section to stand, so
+re-measure (`ls ~/.claude/plugins/cache/<marketplace>/<plugin>/`) instead of trusting or repairing
+the figure. An update made mid-session writes a directory
 that session will never read, and nothing reports it: the update prints success, `check-drift.sh`
 prints "current", and the only tell is the `Base directory for this skill:` line the Skill tool
 prints on invocation. Measured 2026-09-25: a session served `refdiff` 1.4.0 from first call to
 last while the records read 1.6.0 then 1.6.1, missing two rules it needed (`grep`: 0 vs 1 for each
 marker; 424 lines against 470).
 
-**It asks once per plugin per session**, keyed on `$CLAUDE_CODE_SESSION_ID`, because the check is
-otherwise self-triggering: `/dev-tools:update-skill` ends by running `claude plugin update`, which
-is exactly what makes `loaded < installed` true. Without the ack it would interrupt every later
-skill in the session about a decision already made.
+**The script is stateless: it reports what it measures, every time.** That matters because the
+check is self-triggering — `/dev-tools:update-skill` ends by running `claude plugin update`, which
+is exactly what makes `loaded < installed` true — so a session can meet the same true answer
+repeatedly. **Deduplication belongs in the calling skill, not the script:** if you have already put
+this question to the user for this plugin in this session, note it and carry on.
+
+A once-per-session acknowledgement was tried in the script (a stamp file keyed on
+`$CLAUDE_CODE_SESSION_ID`) and removed the same day with four defects, all from one mistake — a
+stamp records *that a call happened*, not *that the user was asked*, and a script cannot observe
+the second. It made refdiff's preflight report a stale session as `current`; it never covered the
+`unknown` path, so persistent causes still repeated; it omitted which arm fired, suppressing the
+"now reload" follow-up in the very workflow that causes it; and subagents inherit the parent's
+session id while having no way to ask, so a subagent spent the single ask. The agent knows whether
+it has asked. The script never can.
 
 **The script is copied into each plugin that ships it**, since a plugin's cache directory carries
 only its own subtree. `scripts/plugin-freshness.sh` is canonical; change it there and copy across,
@@ -88,8 +102,18 @@ for f in $(find plugins -name SKILL.md); do grep -q plugin-freshness "$f" || \
 
 A `github`-sourced entry keeps its manifest in its own repo, so `validate.sh` can only pair the
 versions when that repo is checked out beside this one — it does, and **says SKIPPED when it
-cannot**, because an absent check and a passing one must not look alike. That gap had already let
-svc's listing sit at 1.1.0 against a repo manifest of 1.0.0 with nothing reporting it.
+cannot**, because an absent check and a passing one must not look alike.
+
+Be precise about what it can and cannot tell you, because the first version of this paragraph was
+not. It compares the listing against **whatever is in the sibling working tree**, which may be a
+stale clone, a dirty tree, or a branch nobody published. The one hit it produced on introduction
+was exactly that: a sibling checkout nine days behind reading 1.0.0 against a listing of 1.1.0 —
+the *published* states had agreed since 88 seconds after the bump. This paragraph originally
+reported that as a real publishing mismatch with a consumer-visible symptom, which was false and
+is the kind of claim the section above exists to stop. It cannot distinguish "the listing is
+wrong" from "your clone is old"; it flags that two numbers disagree, and you go and look.
+It also never runs in CI, which checks out this repo alone — so CI always prints SKIPPED, and the
+pairing is enforced on a maintainer's machine only.
 
 ## Frontmatter
 `name` must equal the directory name. `description` says what the skill does and when to trigger it, in one paragraph, under 1024 characters.

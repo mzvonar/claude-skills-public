@@ -14,8 +14,10 @@ description: Run Prisma migrations and regenerate the Prisma client safely — p
    Local, no network, **silent** unless something is wrong. Exit **3** — this session is serving
    an older cached copy of THIS plugin than the one installed; a session pins its version at the
    first call and never moves. Put it to the user (`AskUserQuestion`): reload (`/reload-plugins`)
-   and re-run, or carry on knowingly. Asks once per plugin per session. Exit **2** — could not
-   determine, which is not a pass. Exit **4** — wired wrong, checked nothing; report it.
+   and re-run, or carry on knowingly — and if you already put this question for this plugin in this
+   session, just note it and carry on; the check is stateless and will keep reporting. Exit **2** —
+   could not determine, which is not a pass. Exit **4**, or `No such file` / exit **127** — wired
+   wrong, checked nothing; report it. Why: `docs/conventions.md` in `mzvonar/claude-skills-public`.
 1. **Package manager** — `pnpm-lock.yaml` → pnpm, `yarn.lock` → yarn, `package-lock.json` → npm, `bun.lockb` → bun. `<pm> exec prisma …` below; prefer the repo's own scripts (`db:migrate`, `db:generate`, …) when `package.json` has them, because they carry the repo's flags and env wiring.
 2. **Schema location** — `prisma.config.ts` at the project root if it exists (Prisma 7: connection URL lives there, not in the schema), else `prisma/schema.prisma`. Override with `schemaPath`.
 3. **Env file** — `prisma.config.ts` typically loads `envFile` (default `.env.local`) via dotenv before reading the connection URL, so commands need no `DATABASE_URL=…` prefix. Check it exists before any Prisma command:

@@ -22,3 +22,9 @@ jobs:
       # rollout of that check was wired to a command that could never work, and nothing went red.
       - name: plugin-freshness tests
         run: bash scripts/tests/plugin-freshness.test.sh
+      # check-drift.sh and validate.sh are maintainer scripts and had no test of any kind: the
+      # worktree fix in the first was one reverted line away from silently coming back, and the
+      # external version pairing in the second had never been observed to fire. Synthetic repos and
+      # a synthetic CLAUDE_CONFIG_DIR, so nothing here reads the runner's own installed plugins.
+      - name: maintainer-script tests
+        run: bash scripts/tests/maintainer-scripts.test.sh
