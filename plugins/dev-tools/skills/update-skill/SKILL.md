@@ -9,6 +9,22 @@ Plugin skills are read-only copies under `~/.claude/plugins/cache/claude-skills-
 there is overwritten by the next update; a copy in the repo's `.claude/skills/` silently shadows the
 plugin forever. The fix goes upstream, then comes back through the marketplace.
 
+## Step 0 — is this session reading the CURRENT skill text?
+
+```bash
+bash "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/claude-skills-public/scripts/plugin-freshness.sh"
+```
+
+Local, no network, silent in the normal case. **Exit 3** means this session is serving an older
+cached version than the one installed: a session pins a plugin's version at its first call to the
+skill and never moves, so an update made mid-session never reaches it — and nothing else reports
+this, because the update prints success and `check-drift.sh` prints "current". Put it to the user
+with `AskUserQuestion`: reload (`/reload-plugins`) and re-run, or carry on knowingly. Exit 2, or
+the script not being present, means undetermined — carry on. Background: `docs/conventions.md`.
+
+It matters most HERE. This skill ends by telling the user their change is rolled out, and step 5
+is where a session would otherwise report success while still reading the text it booted with.
+
 ## 0. Identify the skill and its plugin
 
 `/<plugin>:<skill>` tells you both. Find the installed copy to read it:

@@ -29,6 +29,18 @@ checked them" is.
 
 ## Workflow
 
+### 0. Is this session reading the CURRENT skill text?
+
+```bash
+bash "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/claude-skills-public/scripts/plugin-freshness.sh"
+```
+
+Local, no network, silent when current. **Exit 3** = this session is serving an older cached
+version than the one installed — a session pins its version at the first call to a skill and never
+moves, and nothing else reports it. Put it to the user with `AskUserQuestion`: reload
+(`/reload-plugins`) and re-run, or carry on knowingly. Exit 2 or no such script = undetermined,
+carry on. Why: `docs/conventions.md`.
+
 ### 1. Build the run directory
 
 ```bash
