@@ -62,6 +62,18 @@ The mechanics below name Vitest + Postgres (+ Prisma where an ORM hook is
 needed) where a concrete command is required; substitute the project's runner,
 database, and data layer — the method is stack-agnostic.
 
+## Step 0 — is this session reading the CURRENT skill text?
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-freshness.sh" "${CLAUDE_PLUGIN_ROOT}"
+```
+
+Local, no network, and **silent** unless something is wrong. Exit **3** — this session is serving
+an older cached copy of THIS plugin than the one installed; a session pins its version at the first
+call and never moves. Put it to the user (`AskUserQuestion`): reload (`/reload-plugins`) and re-run,
+or carry on knowingly. Asks once per plugin per session. Exit **2** — could not determine, which is
+not a pass. Exit **4** — this call is wired wrong and checked nothing; report it.
+
 ## Configuration & first-run setup
 
 Config lives in `.claude/claude-skills.json` under a top-level

@@ -72,9 +72,24 @@ skill in the session about a decision already made.
 
 **The script is copied into each plugin that ships it**, since a plugin's cache directory carries
 only its own subtree. `scripts/plugin-freshness.sh` is canonical; change it there and copy across,
-and the test asserts the copies are byte-identical. `refdiff` and `svc` are separate repos —
-refdiff carries its own copy and calls it from `preflight.sh` (its `skill_freshness` row is the
-worked example); **svc does not have one yet.**
+and the test asserts the copies are byte-identical. `refdiff` and `svc` are separate repos and
+carry their own: refdiff calls it from `preflight.sh` (its `skill_freshness` row is the worked
+example), svc from `dev-services`' step 0.
+
+**Every skill in this marketplace that has a numbered first step is wired** — 20 of them, a count
+`scripts/tests/plugin-freshness.test.sh` pins as an invariant so one silently deleted fails rather
+than just removing a green row. The skills with no numbered steps are exempt by shape, not by
+oversight; re-derive the census with:
+
+```bash
+for f in $(find plugins -name SKILL.md); do grep -q plugin-freshness "$f" || \
+  { grep -qE '^\s*(###? )?[*]{0,2}1\.' "$f" && echo "unwired: $f"; }; done
+```
+
+A `github`-sourced entry keeps its manifest in its own repo, so `validate.sh` can only pair the
+versions when that repo is checked out beside this one — it does, and **says SKIPPED when it
+cannot**, because an absent check and a passing one must not look alike. That gap had already let
+svc's listing sit at 1.1.0 against a repo manifest of 1.0.0 with nothing reporting it.
 
 ## Frontmatter
 `name` must equal the directory name. `description` says what the skill does and when to trigger it, in one paragraph, under 1024 characters.

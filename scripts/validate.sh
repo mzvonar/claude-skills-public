@@ -63,6 +63,23 @@ for name, e in entries.items():
     else:
         for k in ("source", "repo"):
             if k not in src: print(f"FAIL: {name}: external source missing {k}"); ok = False
+        # A github-sourced plugin keeps its manifest in ITS OWN repo, so the version pairing above
+        # cannot run here — and that asymmetry hid a real mismatch: svc's listing said 1.1.0 while
+        # its repo manifest still said 1.0.0. Nothing reported it. check-drift compares the install
+        # RECORD to the catalog and never opens the repo manifest, `claude plugin tag` compares two
+        # manifests in one repo and so cannot see this pair, and the documented symptom is an update
+        # that says "already at the latest version" against a stale cache.
+        # So: when a sibling checkout is present beside this repo, check the pair. When it is not
+        # (CI, a fresh clone), say the check was SKIPPED rather than printing nothing — an absent
+        # check and a passing one must not look the same.
+        sib = os.path.normpath(os.path.join(root, "..", src["repo"].split("/")[-1]))
+        sibpj = os.path.join(sib, ".claude-plugin", "plugin.json")
+        if os.path.exists(sibpj):
+            sv = json.load(open(sibpj)).get("version")
+            if sv != e.get("version"):
+                print(f"FAIL: {name}: {sib}/.claude-plugin/plugin.json version {sv} != marketplace {e.get('version')}"); ok = False
+        else:
+            print(f"note: {name}: external repo not checked out beside this one — version pairing SKIPPED, not verified")
 sys.exit(0 if ok else 1)
 PY
 

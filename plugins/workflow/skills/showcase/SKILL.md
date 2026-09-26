@@ -25,6 +25,23 @@ description: >-
 - Do NOT use for regression testing; do NOT modify the e2e Playwright config or any e2e project for
   showcase purposes.
 
+## Step 0 — is this session reading the CURRENT skill text?
+
+Before the bootstrap check below, and before any recording.
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-freshness.sh" "${CLAUDE_PLUGIN_ROOT}"
+```
+
+Local, no network, and **silent** unless something is wrong. Exit **3** — this session is serving
+an older cached copy of THIS plugin than the one installed; a session pins its version at the first
+call and never moves. Put it to the user (`AskUserQuestion`): reload (`/reload-plugins`) and re-run,
+or carry on knowingly. Asks once per plugin per session. Exit **2** — could not determine, which is
+not a pass. Exit **4** — this call is wired wrong and checked nothing; report it.
+
+It matters here specifically because this skill COPIES its bundled harness into the consuming
+repo: doing that from a stale copy writes yesterday's harness into someone's e2e package.
+
 ## Zero-config defaults
 
 Everything below works with no configuration:

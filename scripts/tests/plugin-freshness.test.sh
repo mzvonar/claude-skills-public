@@ -44,7 +44,7 @@ done < <(grep -rl 'plugin-freshness\.sh' "$HERE"/plugins/*/skills/*/SKILL.md 2>/
 # INVARIANT, not an observation: the number of wired skills is pinned, so a block silently deleted
 # from one SKILL.md fails here instead of just removing a green row nobody counts. Adding a skill
 # to the rollout means bumping this number in the same change — that is the point of it.
-EXPECT_WIRED=13
+EXPECT_WIRED=20
 [ "$WIRED" = "$EXPECT_WIRED" ] \
   && ok "wiring: exactly $EXPECT_WIRED skills invoke the check" \
   || bad "wiring count" "$WIRED skills invoke plugin-freshness.sh, expected $EXPECT_WIRED — a rollout was added or lost; update EXPECT_WIRED deliberately"
