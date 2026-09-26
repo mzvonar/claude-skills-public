@@ -132,6 +132,35 @@ OUT=$( cd "$W" && bash scripts/validate.sh 2>&1 ); E=$?
 case "$E:$OUT" in 1:*unreadable*) ok "validate: corrupt sibling manifest → clean FAIL, not a traceback" ;;
   *) bad "validate/corrupt" "exit=$E out='$(printf '%s' "$OUT" | tail -3)'" ;; esac
 
+# A plugin-INTERNAL version site must match the catalog. Three marketplace-wide bumps in a row left
+# describe-changes' `VERSION` file and its SKILL.md frontmatter at 1.28.0 while the manifests reached
+# 1.30.1, and only that plugin's own CI test noticed — after the push. Two rows: a local plugin whose
+# extra sites agree, and one where each disagrees in turn.
+mklocal() { # mklocal <root> <catalog-version> <version-file> <frontmatter-version>
+  mkdir -p "$1/.claude-plugin" "$1/plugins/thing/.claude-plugin" "$1/plugins/thing/skills/thing" "$1/scripts"
+  cp "$HERE/scripts/validate.sh" "$1/scripts/validate.sh"
+  printf '{"name":"m","owner":{"name":"t"},"plugins":[{"name":"thing","source":"./plugins/thing","version":"%s","description":"d","author":{"name":"t"},"category":"c"}]}\n' "$2" \
+    > "$1/.claude-plugin/marketplace.json"
+  printf '{"name":"thing","version":"%s"}\n' "$2" > "$1/plugins/thing/.claude-plugin/plugin.json"
+  printf '%s\n' "$3" > "$1/plugins/thing/skills/thing/VERSION"
+  printf -- '---\nname: thing\nversion: "%s"\ndescription: d\n---\n\n# thing\n' "$4" \
+    > "$1/plugins/thing/skills/thing/SKILL.md"; }
+
+W="$TMP/v1"; mklocal "$W" "2.0.0" "2.0.0" "2.0.0"
+OUT=$( cd "$W" && bash scripts/validate.sh 2>&1 ); E=$?
+case "$E" in 0) ok "validate: plugin-internal version sites agree → OK" ;;
+  *) bad "validate/internal-match" "exit=$E out='$OUT'" ;; esac
+
+W="$TMP/v2"; mklocal "$W" "2.0.0" "1.28.0" "2.0.0"
+OUT=$( cd "$W" && bash scripts/validate.sh 2>&1 ); E=$?
+case "$E:$OUT" in 1:*VERSION*1.28.0*) ok "validate: a stale VERSION file → FAIL naming the file" ;;
+  *) bad "validate/internal-VERSION" "exit=$E out='$OUT'" ;; esac
+
+W="$TMP/v3"; mklocal "$W" "2.0.0" "2.0.0" "1.28.0"
+OUT=$( cd "$W" && bash scripts/validate.sh 2>&1 ); E=$?
+case "$E:$OUT" in 1:*frontmatter*1.28.0*) ok "validate: a stale SKILL.md frontmatter version → FAIL" ;;
+  *) bad "validate/internal-frontmatter" "exit=$E out='$OUT'" ;; esac
+
 # A trailing slash in `repo` is legal in the catalog and makes `split("/")[-1]` the empty string,
 # so the sibling path resolves to the PARENT directory, no manifest is found there, and the pair
 # reports SKIPPED — an absent check wearing the costume of a clean one.

@@ -159,5 +159,14 @@ Two things it pins are worth knowing about before editing either script:
 ## Versioning
 The plugin is the unit of versioning. Bump `version` in the plugin's `plugin.json` and the matching entry in `.claude-plugin/marketplace.json` in the same commit; `scripts/validate.sh` fails when they disagree.
 
+**Two manifests are the MINIMUM, not the whole set.** A plugin may declare its version in more
+places — `describe-changes` keeps a `VERSION` file its own runtime reads and a `version:` in the
+skill frontmatter — and a marketplace-wide bump does not know about them. Three consecutive bumps
+walked past both: the manifests reached 1.30.1 while each extra site still read 1.28.0, so the
+report's lessons and discovery metadata named a release two minors old, and only that plugin's own
+test noticed, in CI, after the push. `validate.sh` now DISCOVERS those sites (a `VERSION` file or a
+frontmatter `version:` anywhere under `skills/`) and fails on any that disagrees, so a plugin growing
+a new one is covered without anybody remembering.
+
 ## Maintaining
 How to work on a live skill, release, and roll the update out: [updating-skills.md](updating-skills.md).

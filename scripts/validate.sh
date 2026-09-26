@@ -16,6 +16,28 @@ FORBIDDEN_WORD='(^|[^a-z])abis([^a-z]|$)'
 python3 - <<'PY' || fail=1
 import json, os, re, sys
 root = os.getcwd()
+
+
+def _extra_version_sites(pdir):
+    """Every place inside a plugin that also declares a version: (label, value) pairs.
+
+    Two shapes exist today — a `VERSION` file beside a SKILL.md, and a `version:` in SKILL.md
+    frontmatter. Both are discovered rather than listed, so a plugin that grows one is covered
+    without anybody remembering to add it here.
+    """
+    out = []
+    for dirpath, _dirs, files in os.walk(os.path.join(pdir, "skills")):
+        if "VERSION" in files:
+            p = os.path.join(dirpath, "VERSION")
+            out.append((os.path.relpath(p, root), open(p, encoding="utf-8").read().strip()))
+        if "SKILL.md" in files:
+            p = os.path.join(dirpath, "SKILL.md")
+            head = re.match(r"^---\n(.*?)\n---\n", open(p, encoding="utf-8").read(), re.S)
+            if head:
+                vm = re.search(r'^version:\s*"?([^"\s]+)"?\s*$', head.group(1), re.M)
+                if vm:
+                    out.append((os.path.relpath(p, root) + " (frontmatter)", vm.group(1)))
+    return out
 mp = json.load(open(".claude-plugin/marketplace.json"))
 entries = {p["name"]: p for p in mp["plugins"]}
 ok = True
@@ -34,6 +56,16 @@ for name, e in entries.items():
         skills_dir = os.path.join(pdir, "skills")
         if not os.path.isdir(skills_dir):
             print(f"FAIL: {name}: no skills/ dir"); ok = False; continue
+        # A plugin may declare its version in MORE places than the two manifests — describe-changes
+        # carries a `VERSION` file its own runtime reads and a `version:` in the skill frontmatter.
+        # A marketplace-wide bump does not know about those, and three in a row walked past them:
+        # the manifests reached 1.30.1 while both extra sites still said 1.28.0, so lessons and
+        # discovery metadata named a release two minors old. Only that plugin's OWN test caught it,
+        # in CI, after the push. This check runs on every bump, for every plugin, which is where a
+        # version-parity rule belongs.
+        for extra, got in _extra_version_sites(pdir):
+            if got != e.get("version"):
+                print(f"FAIL: {name}: {extra} declares {got} != marketplace {e.get('version')}"); ok = False
         for d in sorted(os.listdir(skills_dir)):
             sd = os.path.join(skills_dir, d)
             if not os.path.isdir(sd): continue
