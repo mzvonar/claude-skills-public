@@ -1,0 +1,93 @@
+/* plan.css — the plan page's own styles, injected into the shared shell (../changes/assets/template.html)
+   by render-plan.py. Everything structural (cards, sheet, comments, map, views) comes from the shell;
+   this file only adds what a PLAN needs: the plain-words block, the steering vocabulary, sketches,
+   the assumption tags, and the fold that holds everything after the 5-minute version. */
+
+/* The opening. Big enough to be read first, quiet enough not to look like a warning. */
+.pw{font-size:1.02rem;line-height:1.6;color:var(--fg)}
+.pw b.pwl{display:block;font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--fg3);margin-bottom:.3rem}
+.pw+.narr{margin-top:.9rem;border-top:1px solid var(--line);padding-top:.7rem}
+/* A card's plain-words line sits above everything else in its body and reads as prose, not as a field. */
+.cp-plain{font-size:.95rem;color:var(--fg);line-height:1.55}
+.scope{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-top:.9rem;font-size:.85rem;color:var(--fg2)}
+@media(max-width:560px){.scope{grid-template-columns:1fr}}
+.scope b{display:block;font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--fg3);margin-bottom:.2rem}
+.scope ul{margin:0;padding-left:1.1rem}
+/* Steering: the severity words differ from a finding's. The pill keeps the shared colours. */
+.steer-word{font-size:.68rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-left:.4rem;vertical-align:middle}
+.sev-critical .steer-word{color:var(--crit)}.sev-medium .steer-word{color:var(--med)}.sev-low .steer-word{color:var(--low)}
+.cur-alt{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+@media(max-width:560px){.cur-alt{grid-template-columns:1fr}}
+.cur-alt>div{border:1px solid var(--line);border-radius:8px;padding:.55rem .7rem;font-size:.9rem;color:var(--fg2)}
+.cur-alt b{display:block;color:var(--fg);font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.2rem}
+.cur-alt .alt{border-color:rgba(99,179,237,.35)}
+.cost{font-size:.85rem;color:var(--fg2);border-left:2px solid var(--med);padding-left:.6rem}
+.cost b{color:var(--med);font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:.15rem}
+/* Decided already — a dated list, deliberately plain so it never competes with the steering cards. */
+.dec{list-style:none;margin:0;padding:0}
+.dec li{padding:.4rem 0;border-bottom:1px dashed var(--line);font-size:.9rem;color:var(--fg2)}
+.dec li:last-child{border-bottom:0}
+.dec .when{font-family:var(--mono);font-size:.72rem;color:var(--fg3);margin-right:.5rem;white-space:nowrap}
+.dec .by{color:var(--fg3);font-size:.78rem;margin-left:.4rem}
+/* Units: acceptance criteria as written, each with its plain twin folded behind it. */
+.acs{margin:.3rem 0 0;padding-left:1.15rem;font-size:.88rem;color:var(--fg2)}
+.acs li{margin:.3rem 0}
+.acs .acid{font-family:var(--mono);font-size:.7rem;color:var(--info);margin-right:.35rem}
+.acs details{display:inline}
+.acs summary{cursor:pointer;list-style:none;display:inline;color:var(--fg2)}
+.acs summary::-webkit-details-marker{display:none}
+.acs summary::after{content:" ⌄";color:var(--fg3);font-size:.78rem}
+.acs details[open] summary::after{content:" ⌃"}
+.acs .acp{margin:.25rem 0 .3rem;font-size:.85rem;color:var(--fg);border-left:2px solid var(--line2);padding-left:.6rem}
+.umeta{display:flex;flex-wrap:wrap;gap:.6rem;font-size:.75rem;color:var(--fg3);margin-top:.5rem}
+.umeta span b{color:var(--fg2);font-weight:600}
+.size{display:inline-block;font-family:var(--mono);font-size:.7rem;font-weight:700;border:1px solid var(--line2);border-radius:5px;padding:.05rem .4rem;color:var(--fg2)}
+/* A planned file that does not exist yet: the same chip shape, inert, with the + glyph. */
+.fplan{font-family:var(--mono);font-size:.7rem;padding:.15rem .45rem;background:var(--bg2);border:1px dashed var(--line2);border-radius:5px;color:var(--st-add);word-break:break-all}
+.fplan::before{content:"+ ⟨/⟩ ";color:inherit}
+.fplan[data-st=deleted]{color:var(--st-del)}.fplan[data-st=deleted]::before{content:"− ⟨/⟩ "}
+/* Sketches: today's lines, then the planned lines. The planned block is tinted like an addition. */
+.sk .diff{margin-top:.5rem}
+.sk .hh .tag-sk{margin-left:.6rem;font-size:.68rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--st-add)}
+.sk .hh .tag-today{margin-left:.6rem;font-size:.68rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--fg3)}
+.sk .diff.planned .l.a{background:rgba(47,133,90,.14)}
+.sk-lang{font-family:var(--mono);font-size:.7rem;color:var(--fg3);border:1px solid var(--line);border-radius:5px;padding:.05rem .4rem;margin-left:.4rem}
+.sk-note{font-size:.82rem;color:var(--fg3);margin-top:.4rem}
+/* Assumptions carry HOW they were checked — the tag is the whole value. */
+.chk{display:inline-block;font-size:.66rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:.1rem .45rem;border-radius:5px;border:1px solid var(--line2);margin-right:.45rem;vertical-align:middle}
+.chk-measured{color:var(--low);border-color:var(--low)}.chk-read{color:var(--info);border-color:var(--info)}.chk-assumed{color:var(--med);border-color:var(--med)}
+.plain-list{list-style:none;margin:0;padding:0}
+.plain-list li{padding:.4rem 0;border-bottom:1px dashed var(--line);font-size:.9rem;color:var(--fg2)}
+.plain-list li:last-child{border-bottom:0}
+.plain-list .note{color:var(--fg3);font-size:.8rem;margin-left:.3rem}
+.people b{color:var(--fg);font-weight:600}.people .for{color:var(--fg3);font-size:.78rem;margin-left:.4rem}
+.gloss dt{font-weight:600;color:var(--fg);margin-top:.5rem}.gloss dd{margin:0;color:var(--fg2);font-size:.9rem}
+/* Grounding — stacked rows the reader scans for red. Not a table: four breakable columns on a phone
+   were squeezed to one character per line. `overflow-wrap:anywhere` breaks a long path only where
+   it must; `word-break:break-all` broke it everywhere. */
+.gr{font-size:.76rem}
+.gr-h{font-weight:600;color:var(--fg3);font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;padding:.2rem 0 .3rem;border-bottom:1px solid var(--line)}
+.gr-row{padding:.4rem 0;border-bottom:1px dashed var(--line)}
+.gr-row:last-child{border-bottom:0}
+.gr-p{font-family:var(--mono);color:var(--fg);overflow-wrap:anywhere;word-break:normal;line-height:1.5}
+.gr-p button.fpath,.gr-p .fplan{word-break:normal;overflow-wrap:anywhere;white-space:normal;text-align:left}
+.gr-m{display:flex;flex-wrap:wrap;gap:.25rem .6rem;margin-top:.15rem;color:var(--fg3);font-size:.72rem;line-height:1.5}
+.gr-b{font-family:var(--mono)}
+.gr-v{overflow-wrap:anywhere}
+.gr-v.ok{color:var(--low)}.gr-v.miss{color:var(--crit)}.gr-v.warn{color:var(--med)}
+.gr-sum{font-size:.85rem;color:var(--fg2);margin-bottom:.5rem}
+/* A section heading's count wraps under the title on a phone instead of colliding with it. */
+@media(max-width:560px){section>h2{flex-wrap:wrap;gap:.15rem .6rem}section>h2 .cnt{width:100%;text-align:left}}
+/* Two levels: the 5-minute version (the `.q` sections), then the detail. Each is fronted by a BAND —
+   boxed, sentence-case, a size up — that the small uppercase section headings inside them cannot be
+   mistaken for, so the reader always knows which level they are on. The detail's band is also its
+   fold (the shell's section collapse: open at render, one tap shuts it, the choice remembered per
+   repo), and its sections hang off a rule down the left edge. */
+.part,section.detail>h2.sec-t.part{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:.25rem;margin:1.8rem 0 1.1rem;padding:.85rem 1rem;background:var(--bg2);border:1px solid var(--line2);border-left:5px solid var(--info);border-radius:10px;font-size:1.08rem;font-weight:700;letter-spacing:0;text-transform:none;color:var(--fg);line-height:1.3}
+.part-1{margin-top:1.2rem}
+.part .part-t,section.detail>h2.sec-t.part .lhs{font-size:1.08rem;font-weight:700;color:var(--fg)}
+.part .part-c,section.detail>h2.sec-t.part .cnt{font-size:.82rem;font-weight:400;color:var(--fg2);letter-spacing:0;text-transform:none;line-height:1.45;width:100%;text-align:left}
+section.detail>h2.sec-t.part .tw{width:1.1em;font-size:.85rem;color:var(--fg2)}
+section.detail>h2.sec-t.part:hover{border-color:var(--info)}
+section.detail>.detail-b{border-left:3px solid var(--line2);padding-left:1rem;margin-left:.5rem}
+@media(max-width:560px){section.detail>.detail-b{padding-left:.65rem;margin-left:.25rem}}

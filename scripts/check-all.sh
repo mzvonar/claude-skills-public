@@ -22,7 +22,7 @@ step() { # step <name> <command...>
 }
 
 step "validate marketplace and plugins" scripts/validate.sh
-step "describe-changes tests" bash plugins/describe-changes/tests/run.sh
+step "describe tests" bash plugins/describe/tests/run.sh
 step "workflow tests" bash plugins/workflow/tests/run.sh
 # Asserts the WIRING, not only the logic: every SKILL.md calling plugin-freshness.sh must name a
 # path that resolves from its own plugin root and must pass it an argument. The first rollout of
