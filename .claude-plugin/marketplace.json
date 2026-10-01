@@ -62,7 +62,7 @@
     {
       "name": "describe",
       "source": "./plugins/describe",
-      "version": "2.0.0",
+      "version": "2.1.0",
       "description": "Human-first descriptions for the person in the loop: /describe:plan before the work (plain words, before/after map, data-model and code sketches, steering points) and /describe:changes after it (intent, visual map, ranked review spots, folded noise), in chat and as a mobile-first HTML report.",
       "author": {
         "name": "Martin Zvonár"

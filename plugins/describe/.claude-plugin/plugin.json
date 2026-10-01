@@ -1,7 +1,7 @@
 {
   "name": "describe",
   "displayName": "Describe (plan before, changes after — for human review)",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Two skills for the human in the loop. /describe:plan presents a plan BEFORE the work: plain words, a before/after map, data-model and code sketches in the project's own languages, and the steering points a person should settle first. /describe:changes presents the implemented change AFTER it: intent, visual map, the ~3 things a human must verify, noise folded away. Both render in chat and as a mobile-first HTML report with comments that come back to Claude.",
   "author": {
     "name": "Martin Zvonár"

@@ -111,6 +111,11 @@ repo. ≤ ~25 nodes; when the plan is bigger, map the riskiest unit and say so i
 
 - **Units** — the plan's own structure with its acceptance criteria as written. A dense criterion
   gets a `plain` twin; the original stays, because the builder reads that one.
+- **As written in the plan** — not yours to write. The renderer shows the plan's own acceptance
+  criteria and open questions word for word from `structure.json → verbatim`, because those are the
+  words the reader approves and answers. Your job around them: a steering point that restates one of
+  the plan's questions says so in `current` (its id, and the plan's recommendation), and the page's
+  prose never paraphrases them — a paraphrase beside the original is a second version to reconcile.
 - **What stays the same** — the invariants the plan preserves (nothing persisted changes; the URL
   stays; the write path is untouched). Cheap to write, and the first thing a nervous reader looks
   for.

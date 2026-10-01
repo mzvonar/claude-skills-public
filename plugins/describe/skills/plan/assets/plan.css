@@ -91,3 +91,18 @@ section.detail>h2.sec-t.part .tw{width:1.1em;font-size:.85rem;color:var(--fg2)}
 section.detail>h2.sec-t.part:hover{border-color:var(--info)}
 section.detail>.detail-b{border-left:3px solid var(--line2);padding-left:1rem;margin-left:.5rem}
 @media(max-width:560px){section.detail>.detail-b{padding-left:.65rem;margin-left:.25rem}}
+/* The plan's own words ("As written in the plan"): a band of its own and the same fold as the detail,
+   told apart by colour, so the reader knows these lines are the plan's text and not the page's reading
+   of it. The lines WRAP — code lines scroll sideways, prose on a phone must not — under a hanging
+   indent the width of the shell's line-number gutter (3.6em + its padding, border and margin ≈ 5.2em
+   at the code size), so a wrapped line continues under the text and not under the number; and they
+   read at full contrast, since a dimmed context line would say "not the point" and here it is. */
+section.as-written>h2.sec-t.part{border-left-color:var(--low)}
+section.as-written>h2.sec-t.part:hover{border-color:var(--low)}
+.vb{margin:.5rem 0 .9rem}
+.vb-ctx{display:block;font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:var(--fg3);margin-bottom:.25rem}
+.diff.prose{overflow-x:hidden}
+.diff.prose .hh{white-space:normal;overflow-wrap:anywhere}
+.diff.prose .hh .loc{margin-left:.5rem;cursor:pointer;color:var(--fg3)}
+.diff.prose .l{white-space:pre-wrap;overflow-wrap:anywhere;padding-left:calc(.6rem + 5.2em);text-indent:-5.2em}
+.diff.prose .l.p{color:var(--fg)}

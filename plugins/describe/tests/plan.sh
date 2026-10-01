@@ -39,6 +39,7 @@ Today `src/domain/schema.ts:2-5` holds `CodeValue`. The mapper is `map.ts`. The 
 ## Epic 9: Codes
 
 ### Story 9.1: The domain grows
+**Acceptance Criteria:**
 **Given** the platform's snapshot
 **When** it is mapped
 **Then** `CodeValue` carries `status`
@@ -49,6 +50,52 @@ Unrelated. `nowhereSymbol` is not in the tree.
 
 ## Epic 10: Other
 ### Story 10.1: Nope
+F
+# A story-shaped plan: its own acceptance criteria and open questions, which the page must show WORD FOR
+# WORD. The traps: a criterion's own heading (`AC-1 — …`) is part of the section, not a section; a
+# table and a thematic break; a heading-shaped line inside a fence is not a heading; a label nested in
+# a section already taken stays part of it; a section name only a config key knows.
+cat > docs/plans/story.md <<'F'
+# Story 7.2: Something
+
+## Story
+As a reader.
+
+## Acceptance Criteria
+
+### AC-1 — first
+- one `CodeValue`
+- two
+
+### AC-2 — second
+| a | b |
+|---|---|
+| 1 | 2 |
+
+---
+
+## Tasks
+- [ ] do
+
+```md
+## Acceptance Criteria
+fake, inside a fence
+```
+
+## Open questions for the gate
+
+### Group 1 — rules
+#### R1 — a rule
+- (a) yes, recommended
+
+**Open questions:**
+a label inside a section already taken
+
+## Dev Notes
+nothing
+
+## Points to settle
+- only a configured name finds this
 F
 git add -A && git commit -qm init
 
@@ -99,6 +146,44 @@ rm .claude/claude-skills.json
 # Nothing to describe: exit 2, never a silent empty report dir.
 if python3 "$S/collect-plan.py" >/dev/null 2>&1; then fail "no inputs must exit 2"; fi
 echo "collect OK"
+
+# ---- 1b. the plan's own words: acceptance criteria and open questions, verbatim ------------------
+OUTS="$(python3 "$S/collect-plan.py" --from docs/plans/story.md --slug story-7-2 | tail -1 | sed 's/^OUT=//')"
+OUTB="$(python3 "$S/collect-plan.py" --grep-from docs/plans/codes.md 'Background' --slug bg-only | tail -1 | sed 's/^OUT=//')"
+mkdir -p .claude && printf '{"describe":{"plan":{"verbatim":{"questions":["points to settle\\\\b"]}}}}\n' > .claude/claude-skills.json
+OUTC="$(python3 "$S/collect-plan.py" --from docs/plans/story.md --slug story-7-2-config | tail -1 | sed 's/^OUT=//')"
+rm .claude/claude-skills.json
+python3 - "$OUT" "$OUTS" "$OUTB" "$OUTC" <<'PY'
+import json, os, sys
+epic, story, bg, conf = sys.argv[1:5]
+V = lambda d: json.load(open(os.path.join(d, "structure.json")))["verbatim"]
+def lines_of(path, a, b): return open(path, encoding="utf-8").read().splitlines()[a - 1:b]
+# A heading section: its subtree, the criteria's own headings inside it, trailing blank and --- trimmed.
+v = V(story)
+assert [(x["kind"], x["title"]) for x in v] == [("acceptance", "Acceptance Criteria"), ("questions", "Open questions for the gate")], v
+src = open("docs/plans/story.md", encoding="utf-8").read().splitlines()
+ac, oq = v
+assert ac["file"] == "docs/plans/story.md" and ac["context"] == "Story 7.2: Something", ac
+assert src[ac["start"] - 1] == "## Acceptance Criteria" and src[ac["end"] - 1] == "| 1 | 2 |", (ac["start"], ac["end"])
+assert ac["text"].split("\n") == lines_of("docs/plans/story.md", ac["start"], ac["end"]), "not word for word"
+assert "fake, inside a fence" not in ac["text"] and sum(1 for x in v if "fence" in x["text"]) == 0, "a fenced heading was read"
+assert src[oq["end"] - 1] == "a label inside a section already taken", oq["end"]
+assert oq["text"].split("\n") == lines_of("docs/plans/story.md", oq["start"], oq["end"])
+# An epic's bold label: from the label to the next heading, with the FILE's line numbers even though
+# the source is a heading subtree that starts mid-file.
+e = V(epic)
+assert len(e) == 1 and e[0]["kind"] == "acceptance" and e[0]["title"] == "Acceptance Criteria" and e[0]["context"] == "Story 9.1: The domain grows", e
+codes = open("docs/plans/codes.md", encoding="utf-8").read().splitlines()
+assert codes[e[0]["start"] - 1] == "**Acceptance Criteria:**" and codes[e[0]["end"] - 1] == "**And** `alphaThing` stays", e[0]
+assert e[0]["text"].split("\n") == lines_of("docs/plans/codes.md", e[0]["start"], e[0]["end"])
+# A plan without such a section has none; a configured name extends the defaults and never replaces them.
+assert V(bg) == [], V(bg)
+c = V(conf)
+assert [x["title"] for x in c] == ["Acceptance Criteria", "Open questions for the gate", "Points to settle"] and c[2]["kind"] == "questions", c
+print("verbatim OK")
+PY
+grep -q '^verbatim: 1 acceptance-criteria section, 1 open-questions section' <(python3 "$S/collect-plan.py" --from docs/plans/story.md --slug story-7-2) \
+  || fail "collect-plan does not report the verbatim sections"
 
 # ---- 2. a report, the way the analyst writes it --------------------------------------------------
 cat > "$OUT/report.json" <<'J'
@@ -168,16 +253,32 @@ grep -q 'id="summary" class="q"' "$H" && grep -q 'id="findings" class="q"' "$H" 
 grep -q 'class="part part-1"' "$H" || fail "the 5-minute band is missing"
 grep -q 'id="detail" class="detail"><h2 class="sec-t part part-2" data-collapsed="0"' "$H" || fail "the detail is not one fold, open by default, fronted by a band"
 grep -q 'section.detail>h2.sec-t.part' "$H" || fail "plan.css not injected into the shell"
-grep -q "dcOpenSection('detail')" "$H" || fail "a link into the detail does not unfold it"
+grep -q "\['as-written','detail'\]" "$H" && grep -q "dcOpenSection(D.id)" "$H" || fail "a link into a fold (the detail, the plan's own words) does not unfold it"
 if grep -q 'id="quick"' "$H"; then fail "the 5-minute toggle is back — the 5-minute version is the page's first part, not a mode"; fi
+# The plan's own words: a band and a fold of their own, between the 5-minute version and the detail,
+# every line numbered as it is IN THE PLAN FILE and commentable there.
+grep -q 'id="as-written" class="detail as-written"><h2 class="sec-t part part-v" data-collapsed="0"' "$H" || fail "the as-written band is missing, not a fold, or not open by default"
+grep -q 'href="#as-written"' "$H" || fail "the TOC does not link the plan's own words"
+AS_AT="$(python3 -c 'import json,sys; v=json.load(open(sys.argv[1]))["verbatim"][0]; print(v["start"])' "$OUT/structure.json")"
+grep -q "data-f=\"docs/plans/codes.md\" data-n=\"$AS_AT\"" "$H" || fail "an as-written line does not carry the plan file's own line number ($AS_AT)"
+grep -q 'section.as-written>h2.sec-t.part' "$H" || fail "the as-written band's styles are not injected"
 python3 - "$H" <<'PY' || fail "page order"
 import sys
 h = open(sys.argv[1], encoding="utf-8").read()
 at = lambda s: h.index(s)
-assert at('id="summary"') < at('id="findings"') < at('id="detail"') < at('id="decisions"') < at('id="units"') < at('id="glossary"') < at('<!-- /detail -->') < at('id="conversation"'), "the 5-minute part, then the fold, then the conversation outside it"
-assert h.count('<!-- /detail -->') == 1
+assert at('id="summary"') < at('id="findings"') < at('id="as-written"') < at('<!-- /as-written -->') < at('id="detail"') < at('id="decisions"') < at('id="units"') < at('id="glossary"') < at('<!-- /detail -->') < at('id="conversation"'), "the 5-minute part, the plan's own words, then the fold, then the conversation outside it"
+assert h.count('<!-- /detail -->') == 1 and h.count('<!-- /as-written -->') == 1
 print("page order OK")
 PY
+# A plan without an acceptance-criteria or open-questions section renders no band and no TOC link.
+python3 - "$OUT" "$T/nov" <<'PY'
+import json, os, shutil, sys
+src, dst = sys.argv[1:3]; shutil.copytree(src, dst)
+p = os.path.join(dst, "structure.json"); s = json.load(open(p)); s["verbatim"] = []; json.dump(s, open(p, "w"))
+PY
+python3 "$S/render-plan.py" --dir "$T/nov" >/dev/null || fail "render without verbatim sections failed"
+if grep -q 'id="as-written"\|href="#as-written"' "$T/nov/index.html"; then fail "an empty as-written band was rendered"; fi
+grep -q 'The detail follows, one level down.' "$T/nov/index.html" || fail "the 5-minute band promises a section that is not there"
 grep -q 'data-id="S1" data-key="' "$H" || fail "steering card lacks a content key"
 grep -q 'class="steer-word">settle first' "$H" || fail "steering severity word missing"
 grep -q 'data-t="more">▲ Settle first' "$H" || fail "verdict buttons not relabelled"

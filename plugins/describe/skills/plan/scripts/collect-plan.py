@@ -16,7 +16,9 @@ Writes, under <root>/.describe-changes/plan/<slug>/ by default:
   sources/NN-<name>.md   each extracted input, verbatim
   plan.md                all of them, each under a `<!-- source: … -->` marker — what the analyst reads
   meta.json              repo, root, branch, head, the language census, the inputs, the slug
-  structure.json         headings; the units (level-3 headings) with their acceptance-criteria lines
+  structure.json         headings; the units (level-3 headings) with their acceptance-criteria lines; and
+                         `verbatim` — the plan's own acceptance-criteria and open-questions sections, word
+                         for word, each with the file and the lines it came from (the page shows them as written)
   citations.json         every repo path the plan names (exists / in range / missing), every backticked
                          identifier and how many tracked files contain it — the grounding pass
 The last line printed is `OUT=<dir>`. Exit 2 when nothing was collected.
@@ -44,6 +46,21 @@ SYMBOL_RE = re.compile(r"`([A-Za-z_][A-Za-z0-9_]{3,63})`")
 URL_RE = re.compile(r"https?://\S+")
 AC_RE = re.compile(r"^\s*(?:\*\*(Given|When|Then|And|But)\*\*|(?:Given|When|Then|And|But)\b|- \[[ xX]\]|AC-?\d+\b)")
 MAX_SYMBOLS = 200
+# The plan's own acceptance-criteria and open-questions sections, found by WHAT A SECTION IS CALLED —
+# never by a planning tool's layout. A section is a heading (with its subtree) or a bold label alone on
+# its line (`**Acceptance Criteria:**`, the shape an epic list uses inside each story). The name is
+# matched from its start, case-insensitively, after emphasis, a leading number and a trailing colon are
+# stripped; `acs?$` takes the whole name so a criterion's own heading (`AC-1 — …`) is not a section.
+# Generic English on purpose: a repo adds its own names under describe.plan.verbatim (SKILL.md →
+# Configuration), and they extend these, never replace them.
+VERBATIM_DEFAULT = {
+    "acceptance": [r"acceptance\s+criteria\b", r"acceptance\s+(?:tests?|scenarios?)\b", r"acs?$"],
+    "questions": [r"open\s+(?:questions?|issues?|decisions?|points?)\b", r"unresolved\s+(?:questions?|issues?)\b",
+                  r"outstanding\s+questions?\b", r"questions?\s+for\b", r"decisions?\s+(?:needed|required|pending)\b",
+                  r"questions?$"],
+}
+LABEL_RE = re.compile(r"^\s*(?:\*\*|__)(?P<name>[^*_].*?)(?:\*\*|__)\s*:?\s*$")
+RULE_RE = re.compile(r"^\s*([-*_])(?:\s*\1){2,}\s*$")
 
 def run(args, cwd, check=True):
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=check).stdout
@@ -90,10 +107,65 @@ def subtree(lines, idx, level):
     return lines[idx:j]
 
 def extract_headings(text, spec):
-    """Every heading matching `spec` (substring, or `re:` regex), each with its subtree."""
+    """Every heading matching `spec` (substring, or `re:` regex), each with its subtree and the index of
+    its first line in `text` — what maps a verbatim section back to the file's own line numbers."""
     lines = text.splitlines()
     pat = re.compile(spec[3:], re.I) if spec.startswith("re:") else re.compile(re.escape(spec), re.I)
-    return [(t, "\n".join(subtree(lines, i, lv))) for i, lv, t in headings(lines) if pat.search(t)]
+    return [(t, "\n".join(subtree(lines, i, lv)), i) for i, lv, t in headings(lines) if pat.search(t)]
+
+def section_name(raw):
+    """A heading or label reduced to the words that say what the section IS."""
+    s = re.sub(r"[*_`]+", "", raw).strip()
+    s = re.sub(r"^(?:§\s*)?\d+(?:\.\d+)*[.)]?\s+", "", s)
+    return s.rstrip(":").strip().lower()
+
+def verbatim_kind(raw, patterns):
+    name = section_name(raw)
+    for kind, pats in patterns.items():
+        if any(re.match(p, name) for p in pats):
+            return kind
+    return None
+
+def verbatim_sections(text, patterns):
+    """(kind, title, context, first, last) for every acceptance-criteria or open-questions section of
+    one source — 0-based line indexes into `text`, trailing blank lines and thematic breaks trimmed. A
+    match inside a section already taken is part of it, not a section of its own; fenced code is never
+    read, so a `## Acceptance Criteria` inside an example block is not one."""
+    lines = text.splitlines()
+    hs = headings(lines)
+    fenced, fence = set(), None
+    for i, l in enumerate(lines):
+        m = FENCE_RE.match(l)
+        if m:
+            fenced.add(i); fence = None if fence == m.group(1) else (fence or m.group(1)); continue
+        if fence: fenced.add(i)
+    head_at = {i: (lv, t) for i, lv, t in hs}
+    labels = {}
+    for i, l in enumerate(lines):
+        if i in fenced or i in head_at: continue
+        m = LABEL_RE.match(l)
+        if m and verbatim_kind(m.group("name"), patterns): labels[i] = m.group("name").strip().rstrip(":").strip()
+    def context(i, level):
+        for j, lv, t in reversed(hs):
+            if j < i and lv < level: return t
+        return None
+    found, taken = [], -1
+    for i in sorted(set(head_at) | set(labels)):
+        if i <= taken: continue
+        if i in head_at:
+            lv, t = head_at[i]
+            kind = verbatim_kind(t, patterns)
+            if not kind: continue
+            last = i + len(subtree(lines, i, lv)) - 1
+            title, ctx = t, context(i, lv)
+        else:
+            title = labels[i]; kind = verbatim_kind(title, patterns)
+            nxt = [j for j in list(head_at) + list(labels) if j > i]
+            last = (min(nxt) if nxt else len(lines)) - 1
+            ctx = context(i, 7)
+        while last > i and (not lines[last].strip() or RULE_RE.match(lines[last])): last -= 1
+        found.append((kind, title, ctx, i, last)); taken = last
+    return found
 
 def extract_paragraphs(text, regex):
     """The blank-line-separated blocks matching `regex` — a paragraph, a list, a status block."""
@@ -158,6 +230,8 @@ def main():
         ap.print_usage(); print("nothing to collect: pass --from, --grep-from, --epic or --story", file=sys.stderr); sys.exit(2)
 
     sources = []   # (label, text)
+    origins = []   # (file, index of the source's first line in that file) — parallel to `sources`; the
+                   # index is None where the text is not one contiguous run of the file (a grep's blocks)
     def resolve(file):
         p = file if os.path.isabs(file) else os.path.join(root, file)
         if not os.path.isfile(p):
@@ -167,15 +241,17 @@ def main():
         text = read_text(resolve(file))
         rel = os.path.relpath(resolve(file), root)
         if kind == "file":
-            sources.append((rel, text))
+            sources.append((rel, text)); origins.append((rel, 0))
         elif kind == "heading":
             hits = extract_headings(text, spec)
             if not hits: print(f"warning: no heading in {rel} matches {spec!r}", file=sys.stderr)
-            for t, body in hits: sources.append((f"{rel}#{t}", body))
+            for t, body, at in hits:
+                sources.append((f"{rel}#{t}", body)); origins.append((rel, at))
         else:
             hits = extract_paragraphs(text, spec)
             if not hits: print(f"warning: nothing in {rel} matches /{spec}/", file=sys.stderr)
-            sources.append((f"{rel} ~ /{spec}/", "\n\n".join(hits))) if hits else None
+            if hits:
+                sources.append((f"{rel} ~ /{spec}/", "\n\n".join(hits))); origins.append((rel, None))
     # A proposal the extracted text names is part of the plan: include it whole, once.
     if proposals:
         known = {os.path.relpath(p, root) for p in glob.glob(os.path.join(root, proposals))}
@@ -185,7 +261,7 @@ def main():
             if os.path.basename(p) in joined and p not in {lbl for lbl, _ in sources}:
                 named.add(p)
         for p in sorted(named):
-            sources.append((p, read_text(os.path.join(root, p))))
+            sources.append((p, read_text(os.path.join(root, p)))); origins.append((p, 0))
     if not any(t.strip() for _, t in sources):
         print("nothing to describe: the inputs produced no text", file=sys.stderr); sys.exit(2)
 
@@ -213,7 +289,22 @@ def main():
         body = subtree(lines, i, lv)
         acs = [l.strip() for l in body[1:] if AC_RE.match(l)]
         units.append({"heading": t, "line": i + 1, "acceptance_lines": len(acs), "acs": acs[:60]})
-    structure = {"headings": [{"level": lv, "text": t, "line": i + 1} for i, lv, t in hs], "units": units}
+    # The plan's own acceptance criteria and open questions, word for word, per source: `start`/`end`
+    # are the lines IN THE FILE, so a comment on the page lands on the line the author will edit.
+    patterns = {k: list(v) for k, v in VERBATIM_DEFAULT.items()}
+    for kind, extra in ((cfg.get("verbatim") or {}) if isinstance(cfg.get("verbatim"), dict) else {}).items():
+        if kind in patterns and isinstance(extra, list):
+            patterns[kind] += [p for p in extra if isinstance(p, str)]
+    verbatim = []
+    for (label, text), (file, offset) in zip(sources, origins):
+        src_lines = text.splitlines()
+        for kind, title, ctx, first, last in verbatim_sections(text, patterns):
+            verbatim.append({"kind": kind, "title": title, "context": ctx, "source": label, "file": file,
+                             "start": offset + first + 1 if offset is not None else None,
+                             "end": offset + last + 1 if offset is not None else None,
+                             "text": "\n".join(src_lines[first:last + 1])})
+    structure = {"headings": [{"level": lv, "text": t, "line": i + 1} for i, lv, t in hs], "units": units,
+                 "verbatim": verbatim}
     json.dump(structure, open(os.path.join(out, "structure.json"), "w", encoding="utf-8"), indent=1, ensure_ascii=False)
 
     # ---- grounding: every path and symbol the plan names, checked against the tree ---------------
@@ -319,6 +410,9 @@ def main():
     print(f"collected {len(sources)} source(s), {len(lines)} lines → {os.path.relpath(out, root)}/plan.md")
     print(f"structure: {len(hs)} headings, {len(units)} units (level-3), "
           f"{sum(u['acceptance_lines'] for u in units)} acceptance lines")
+    va = sum(1 for v in verbatim if v["kind"] == "acceptance"); vq = len(verbatim) - va
+    print(f"verbatim: {va} acceptance-criteria section{'' if va == 1 else 's'}, {vq} open-questions section{'' if vq == 1 else 's'}"
+          + (" — shown on the page as written" if verbatim else ""))
     print(f"grounding: paths {s['paths_found']}/{s['paths']} found"
           + (f" ({s['paths_out_of_range']} with a line range past the file's end)" if s['paths_out_of_range'] else "")
           + f" · bare file names {s['bare_resolved']}/{s['bare_files']} resolved · symbols {s['symbols_found']}/{s['symbols']} present in the tree")

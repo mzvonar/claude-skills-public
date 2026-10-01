@@ -1,6 +1,6 @@
 ---
 name: plan
-version: "2.0.0"
+version: "2.1.0"
 description: >
   Present a PLAN to the person who must steer it, before anyone implements it — an ad-hoc plan from
   the conversation, a story or task spec, a change proposal, or a whole epic. Plain words on what will
@@ -74,6 +74,13 @@ identifier with the count of files that contain it. A missing path or an unknown
 a typo in the plan or a thing the plan will create — you decide which, and a stale citation is a
 steering point (the plan is reasoning about code that is not there).
 
+`structure.json → verbatim` holds the plan's **own acceptance criteria and open questions, word for
+word**: every heading or bold label named that way (`## Acceptance Criteria`, `**Acceptance
+Criteria:**` inside an epic's story, `## Open questions for T2`, `Decisions needed`, …), each with the
+file and the lines it came from. Found by what a section is called, never by a planning tool's
+layout; the collector prints `verbatim: N … sections`. The page shows them as written — you never
+retype them (step 3).
+
 `meta.json → languages` is the tree's language census. **Sketches are written in those languages**
 — the one the file you are sketching is in — never in pseudocode, because the reader knows the
 project's languages and can diff a sketch against the real file in their head; pseudocode they
@@ -122,7 +129,13 @@ non-negotiables:
   the page. A new file has `status: "new"` and no `before`; a removal has no `after`.
 - **Units** in the plan's own order, each with its acceptance criteria as written (`acs[].text`,
   with a `plain` twin when the criterion is dense), the files it `touches` (`new / changed /
-  removed / unchanged`), what it `depends_on`, who reviews, a `size` (S/M/L).
+  removed / unchanged`), what it `depends_on`, who reviews, a `size` (S/M/L). When the plan's
+  acceptance-criteria section is in `structure.json → verbatim`, the page already shows every word
+  of it: a unit's `acs[].text` may then be each criterion's own title line, its meaning in `plain`.
+- **The plan's own words stay the plan's.** Its acceptance criteria and open questions render
+  verbatim in their own band (`verbatim` above). Do not paraphrase them into `plain` or `summary`,
+  and when a steering point IS one of the plan's open questions, say so in its `current` ("the plan
+  asks this as Q2 and recommends (a)"), so the reader answers it once, in the plan's terms.
 - **Views** (`../changes/reference/visualizations.md`, the shared toolset): a `datamodel` view
   whenever a stored or exchanged shape changes; a `flow` for the runtime path of one concrete user
   action; a `screen` for UI chrome; an `adoption` for a shared thing several places will use. The
@@ -163,7 +176,10 @@ on 8791 and a change report on 8790 keep their own). The page is self-contained 
 renderer (CDN); the map degrades to its text list. Every path on the page opens the file **as it is
 today**. The page has two levels, each fronted by a band: the **5-minute version** — the plain words,
 the pictures and the steering points — then **the detail**, whose band is also a fold: open by default,
-one tap shuts it, any link into it unfolds it; there is no mode to switch. If the `Artifact` tool is
+one tap shuts it, any link into it unfolds it; there is no mode to switch. Between them, when the plan
+has any, sits **As written in the plan**: its acceptance criteria and open questions word for word,
+in a band and fold of their own, every line numbered as it is in the plan file and commentable there.
+If the `Artifact` tool is
 available and the user is remote, you may also
 publish `$OUT/index.html`. Skip all of this with `--chat-only`.
 
@@ -185,7 +201,8 @@ Do not paste sketches or acceptance criteria into chat. The chat is the page's t
 
 Stay in this mode until the user moves on. The page takes input the same five ways the changes
 report does — select any text and *Ask about this*, tap a line number beside any code line (a
-sketch's planned lines included: they carry `sketch:<id>:<line>`), a note on a steering card, a
+sketch's planned lines included: they carry `sketch:<id>:<line>`; a line of the plan's own words
+carries the plan file and its line — the address of the amendment), a note on a steering card, a
 verdict button on it, a reply in a thread — and `comments` returns all of them:
 
 ```bash
@@ -234,7 +251,8 @@ can find a planning layout the skill deliberately knows nothing about.
       "status": "docs/planning/status.yaml",
       "stories": "docs/stories",
       "proposals": "docs/planning/change-proposal-*.md",
-      "outDir": ".describe-changes/plan"
+      "outDir": ".describe-changes/plan",
+      "verbatim": { "acceptance": ["kryteria akceptacji\\b"], "questions": ["points to settle\\b"] }
     }
   }
 }
@@ -247,6 +265,7 @@ can find a planning layout the skill deliberately knows nothing about.
 | `stories` | unset | The directory of story/task files; `--story KEY` includes `<stories>/<KEY>*.md`. |
 | `proposals` | unset | A glob; a proposal file the extracted epic text names is included whole. |
 | `outDir` | `.describe-changes/plan` | Where a plan's report dir lands (the changes skill's directory, already gitignored in every consumer). |
+| `verbatim` | unset | More section names the page shows word for word, as regexes matched from the start of a heading or bold label (case-insensitive; emphasis, a leading number and a trailing colon stripped). `acceptance` and `questions` each EXTEND the built-in English names — acceptance criteria / tests / scenarios, `AC`/`ACs`; open questions / issues / decisions, unresolved or outstanding questions, questions for …, decisions needed, `Questions` — and never replace them. |
 
 ## Style rules for everything you write
 

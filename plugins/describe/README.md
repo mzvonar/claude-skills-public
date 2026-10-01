@@ -83,10 +83,15 @@ divergence scoring).
 - **What stays the same**, **Assumptions** (each `measured`, `read` or `assumed`), **How you'll try
   it**, **Who else is involved**, a **glossary**, and **Grounding** — every path and symbol the plan
   cites, found or not.
+- **As written in the plan** — the plan's own acceptance criteria and open questions, word for word:
+  any heading or bold label so named, whatever tool wrote the plan (`## Acceptance Criteria`,
+  `**Acceptance Criteria:**`, `## Open questions for T2`, …; a repo adds its own names under
+  `describe.plan.verbatim`). Every line keeps its number in the plan file and takes a comment there.
 - Two levels, each fronted by a band: the **5-minute version** — the plain words, the pictures and
   the steering points — then **the detail**, whose band is also a fold: open by default, one tap
   shuts it (remembered per repo), and any link into it (the table of contents, a hash) unfolds it.
-  There is no mode to switch.
+  There is no mode to switch. The plan's own words, when it has any, sit between the two in a band
+  and fold of their own.
 
 Verdicts on a steering point (▲ settle first · ▼ fine as is · ✕ not a decision · ✓ keep) and
 comments on anything come back to the session, which drafts the amendments to the plan documents

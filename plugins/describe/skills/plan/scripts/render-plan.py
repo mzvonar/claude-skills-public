@@ -184,6 +184,50 @@ def sketch_card(k):
             f'<div class="card-b">{plain_block(k.get("plain"))}{"".join(parts)}'
             + (f'<div class="sk-note">{E(k["note"])}</div>' if k.get("note") else "") + "</div></div>")
 
+VERBATIM_GROUPS = (("acceptance", "Acceptance criteria", "as-written-acceptance"),
+                   ("questions", "Open questions", "as-written-questions"))
+
+def verbatim_band(items):
+    """The plan's own acceptance criteria and open questions, word for word (structure.json → verbatim).
+
+    The reader approves and answers THESE words, so the page shows them as the plan has them — never
+    a paraphrase — with every line numbered as it is in the file and commentable there: a note on
+    line 247 of the story file comes back as that file and that line, which is where the author edits.
+    Plain text, wrapped: the shared highlighter leaves Markdown unlexed on purpose, and a table keeps
+    its columns because the block is monospace. A section taken from a grep's blocks has no line
+    numbers of its own and is numbered from 1, anchored to its source.
+    """
+    if not items:
+        return []
+    n_ac = sum(1 for v in items if v.get("kind") == "acceptance"); n_q = sum(1 for v in items if v.get("kind") == "questions")
+    what = " and ".join(x for x in [f'{n_ac} acceptance-criteria section{"s" if n_ac != 1 else ""}' if n_ac else "",
+                                    f'{n_q} open-questions section{"s" if n_q != 1 else ""}' if n_q else ""] if x)
+    out = ['<section id="as-written" class="detail as-written"><h2 class="sec-t part part-v" data-collapsed="0">'
+           '<span class="lhs"><span class="tw">▼</span>As written in the plan</span>'
+           f'<span class="cnt">{E(what)}, word for word from the plan\'s own files — tap a line number to comment on that line of the plan. Tap to fold.</span></h2>'
+           '<div class="detail-b">']
+    for kind, name, sid in VERBATIM_GROUPS:
+        group = [v for v in items if v.get("kind") == kind]
+        if not group:
+            continue
+        out.append(f'<section id="{sid}"><h2>{E(name)} <span class="cnt">as written · {len(group)} section{"s" if len(group) != 1 else ""}</span></h2>')
+        for v in group:
+            lines = (v.get("text") or "").split("\n")
+            if v.get("start"):
+                f, start, anchor = v["file"], int(v["start"]), v["file"]
+                loc, head = f'{f}:{start}-{start + len(lines) - 1}', f'{f} lines {start}–{start + len(lines) - 1}'
+            else:
+                f, start, anchor = v.get("source") or v.get("file") or "plan", 1, "plan:" + (v.get("source") or v.get("file") or "")
+                loc, head = f, f'{f} — its matching blocks, numbered from 1'
+            ctx = f'<span class="vb-ctx">{E(v["context"])}</span>' if v.get("context") else ""
+            rows = code_rows(lines, f, start, "p", data_f=anchor, lang=None)
+            out.append(f'<div class="vb">{ctx}<div class="diff prose" data-file="{E(anchor)}"><div class="hh">{E(head)}'
+                       f'<span class="loc cp" data-loc="{E(loc)}" title="Copy {E(loc)}">⧉</span>'
+                       f'<span class="hint">💬 tap a line number to comment</span></div><pre>{rows}</pre></div></div>')
+        out.append('</section>')
+    out.append('</div></section><!-- /as-written -->')
+    return out
+
 def try_card(c):
     steps = "".join(f"<li>{E(s)}</li>" for s in c.get("steps", []))
     where = f'<div class="ck-where">{E(c["where"])}</div>' if c.get("where") else ""
@@ -266,6 +310,8 @@ def main():
     report = json.load(open(os.path.join(d, "report.json"), encoding="utf-8"))
     meta = json.load(open(os.path.join(d, "meta.json"), encoding="utf-8")) if os.path.exists(os.path.join(d, "meta.json")) else {}
     cit = json.load(open(os.path.join(d, "citations.json"), encoding="utf-8")) if os.path.exists(os.path.join(d, "citations.json")) else {}
+    structure = json.load(open(os.path.join(d, "structure.json"), encoding="utf-8")) if os.path.exists(os.path.join(d, "structure.json")) else {}
+    verbatim = [v for v in (structure.get("verbatim") or []) if isinstance(v, dict) and v.get("text")]
     tpl = open(a.template, encoding="utf-8").read()
     css = open(a.css, encoding="utf-8").read()
 
@@ -352,6 +398,7 @@ def main():
     if report.get("views"): toc.append('<a href="#view-1">Pictures</a>')
     if report["graph"].get("nodes"): toc.append('<a href="#map">Map</a>')
     toc.append('<a href="#findings">Steering</a>')
+    if verbatim: toc.append('<a href="#as-written">As written</a>')
     if report.get("decisions"): toc.append('<a href="#decisions">Decided</a>')
     toc.append('<a href="#units">Build</a>')
     if sketches: toc.append('<a href="#sketches">Sketches</a>')
@@ -369,8 +416,10 @@ def main():
              '</span><button id="howto-x" title="Dismiss">✕</button></div>')
     # Two levels, each fronted by a BAND the small section headings cannot be mistaken for: the
     # 5-minute version (plain words, pictures, steering points), then the detail (its band is below).
+    follows = ("The plan's own acceptance criteria and open questions follow, word for word, then the detail."
+               if verbatim else "The detail follows, one level down.")
     b.append('<div class="part part-1"><span class="part-t">The 5-minute version</span>'
-             '<span class="part-c">plain words · pictures · steering points — enough to judge the direction. The detail follows, one level down.</span></div>')
+             f'<span class="part-c">plain words · pictures · steering points — enough to judge the direction. {follows}</span></div>')
 
     # ---- plain words ---------------------------------------------------------------------------------
     scope = report.get("scope") or {}
@@ -419,6 +468,11 @@ def main():
     else:
         b.append('<div class="empty">Nothing to steer: every decision in this plan carries a dated ruling. That is a claim about the plan, not a guarantee — the units and sketches below are where to look.</div>')
     b.append("</section>")
+
+    # ---- the plan's own words: its acceptance criteria and open questions, as written --------------
+    # Its own band and its own fold, between the 5-minute version and the detail: this is the text the
+    # reader approves and answers, so it sits above the analysis of how it will be built.
+    b.extend(verbatim_band(verbatim))
 
     # ---- the detail: everything after the 5-minute version, behind ONE fold ----------------------
     # The page's first part IS the 5-minute version (plain words, pictures, steering points); there is
@@ -535,12 +589,14 @@ def main():
              '<span class="sheet-t" id="sheet-t"></span>'
              '<span class="sheet-nav" id="sheet-nav" hidden><button class="btn" id="sheet-prev" aria-label="Previous file in this group">‹</button><span class="sheet-pos" id="sheet-pos"></span><button class="btn" id="sheet-next" aria-label="Next file in this group">›</button></span>'
              '<button class="btn" id="sheet-x">✕</button></div><div class="sheet-b" id="sheet-b"></div></div>')
-    # A link into the fold — the TOC, a hash in the URL, anything on the page — unfolds it first, so a
-    # shut detail never swallows a jump. Deferred to DOMContentLoaded: the shell's script, which defines
+    # A link into a fold — the TOC, a hash in the URL, anything on the page — unfolds it first, so a
+    # shut fold never swallows a jump. The folds are the detail and, when the plan has them, its own
+    # words ("as written"). Deferred to DOMContentLoaded: the shell's script, which defines
     # `dcOpenSection`, runs after this body. Capture phase, so the unfold precedes the browser's own scroll.
-    b.append("<script>document.addEventListener('DOMContentLoaded',function(){var D=document.getElementById('detail');if(!D||!window.dcOpenSection)return;"
-             "var open=function(h,scroll){if(!h||h.length<2||h.charAt(0)!=='#')return;var t=document.getElementById(h.slice(1));"
-             "if(!t||t===D||!D.contains(t))return;window.dcOpenSection('detail');if(scroll)t.scrollIntoView();};"
+    b.append("<script>document.addEventListener('DOMContentLoaded',function(){if(!window.dcOpenSection)return;"
+             "var F=['as-written','detail'].map(function(i){return document.getElementById(i);}).filter(Boolean);if(!F.length)return;"
+             "var open=function(h,scroll){if(!h||h.length<2||h.charAt(0)!=='#')return;var t=document.getElementById(h.slice(1));if(!t)return;"
+             "F.forEach(function(D){if(t!==D&&D.contains(t)){window.dcOpenSection(D.id);if(scroll)t.scrollIntoView();}});};"
              "open(location.hash,true);window.addEventListener('hashchange',function(){open(location.hash,false);});"
              "document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href^=\"#\"]');if(a)open(a.getAttribute('href'),false);},true);});</script>")
     prior = [{k: v for k, v in e.items() if k in ("ts", "type", "finding", "finding_key", "file", "check", "check_key", "text", "undo", "id", "anchor", "thread", "rid")}
