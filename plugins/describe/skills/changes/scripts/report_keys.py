@@ -27,6 +27,13 @@ def finding_key(f):
     """A finding is the same finding while it points at the same place and makes the same claim."""
     return _h(f"{f.get('file','')}|{norm_claim(f.get('title'))}")
 
+def item_key(kind, context, title):
+    """One of a plan's OWN acceptance criteria or open questions (/describe:plan's "As written" cards)
+    is the same item while it has the same kind, sits under the same parent heading and makes the same
+    claim. The plan's own id (`AC-3`, `Q7`) is left out on purpose: re-numbering a plan moves the ids,
+    and a reader's comment belongs to what the item SAYS, not to the number it had that day."""
+    return _h(f"{kind}|{norm_claim(context)}|{norm_claim(title)}")
+
 def finding_site_key(f):
     """Weaker match: same file, same severity. Lets a re-WORDED finding read as changed rather than
     as one disappearing and another appearing — the reviewer needs to know which of the two it is."""
@@ -131,8 +138,8 @@ def thread_is_open(turns):
 # while the CLI still minted from the key. That state is not exotic — it is what FIXING a finding
 # creates, so it was reachable by the ordinary act of answering a review.
 #
-# These four are the single derivation. Nothing else may build one of these ids by hand; a guard in
-# tests/run.sh asserts neither consumer constructs the `note-` / `checknote-` prefixes inline.
+# These six are the single derivation. Nothing else may build one of these ids by hand; a guard in
+# tests/run.sh asserts no consumer constructs the `note-` / `checknote-` / `itemnote-` prefixes inline.
 
 def note_group_key(e):
     """How note events collapse into ONE thread. An edited note is one thread, not two."""
@@ -157,6 +164,16 @@ def check_group_key(e):
 def check_thread_id(e):
     """`note_thread_id` for a note left on a verification-check card."""
     return "checknote-" + (e.get("check_key") or e.get("check") or "unknown")
+
+
+def item_group_key(e):
+    """`note_group_key` for a comment left on one of a plan's own acceptance criteria or open questions."""
+    return e.get("item_key") or ("id:" + (e.get("item") or "unknown"))
+
+
+def item_thread_id(e):
+    """`note_thread_id` for a comment left on one of a plan's own acceptance criteria or open questions."""
+    return "itemnote-" + (e.get("item_key") or e.get("item") or "unknown")
 
 def displayed_paths(report):
     """Every path the report already shows as a control that OPENS that file's diff.

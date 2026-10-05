@@ -1501,6 +1501,10 @@ assert m.sanitize_event({"id": "x" * 65}) is None
 assert m.sanitize_event({"id": "cmtroluz6t1la"}), "a real comment id must survive"
 assert m.sanitize_event({"id": "note-7e366573f320"}), "a real note id must survive"
 assert m.sanitize_event({"rid": "rm5k2x9qa1"}), "a real reply id must survive"
+# a plan page's comment on one of its own criteria or questions: `item` and `item_key` are ids too
+assert m.sanitize_event({"type": "item_note", "item": "AC 1", "item_key": "ab12", "text": "x"}) is None, "a space in an item id must drop the event"
+assert m.sanitize_event({"type": "item_note", "item": "AC-1", "item_key": "ab\"><x", "text": "x"}) is None, "markup in an item key must drop the event"
+assert m.sanitize_event({"type": "item_note", "item": "AC-1", "item_key": "1964f5b84719-2", "text": "x"}), "a real item comment must survive"
 assert m.sanitize_event({"type": "comment", "text": "<img src=x>"}), "text is escaped at render, not dropped here"
 # anchor.line is a NUMBER; a payload there reached an innerHTML sink
 assert "line" not in m.sanitize_event({"id": "c1", "anchor": {"line": "<img src=x onerror=1>"}})["anchor"]
@@ -1578,14 +1582,18 @@ assert m.note_group_key({"finding": "C1"}) != m.note_group_key({"finding": "C2"}
 assert m.check_thread_id({"check": "V1", "check_key": "ac85"}) == "checknote-ac85"
 assert m.check_thread_id({"check": "V1"}) == "checknote-V1"
 assert m.check_group_key({"check": "V1"}) == "id:V1"
+# and a plan page's comments on its own criteria and questions
+assert m.item_thread_id({"item": "AC-1", "item_key": "1964f5b84719"}) == "itemnote-1964f5b84719"
+assert m.item_thread_id({"item": "AC-1"}) == "itemnote-AC-1"
+assert m.item_group_key({"item": "AC-1"}) == "id:AC-1"
 
-# STRUCTURAL: neither consumer may build one of these ids by hand again. A parity assertion between
+# STRUCTURAL: no consumer may build one of these ids by hand again. A parity assertion between
 # two functions that both call the same helper is a tautology and would pass on any input; this is
 # what actually keeps them from re-diverging.
-for f in ("feedback.py", "render-report.py"):
+for f in ("feedback.py", "render-report.py", os.path.join("..", "..", "plan", "scripts", "render-plan.py")):
     src = open(os.path.join(S, f), encoding="utf-8").read()
     src = re.sub(r"#.*", "", src)                      # comments may name the ids
-    for bad in ('"note-" +', "'note-' +", '"checknote-" +', "'checknote-' +"):
+    for bad in ('"note-" +', "'note-' +", '"checknote-" +', "'checknote-' +", '"itemnote-" +', "'itemnote-' +"):
         assert bad not in src, f"{f} builds a thread id inline: {bad}"
 print("thread identity OK")
 PI

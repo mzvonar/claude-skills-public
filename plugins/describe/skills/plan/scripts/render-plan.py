@@ -20,7 +20,10 @@ sys.path.insert(0, CHANGES)
 from views import mermaid, map_list, render_view                       # noqa: E402  (shared with /describe:changes)
 from highlight import language_for, scan, OPEN_NONE                   # noqa: E402
 from report_keys import (check_key, finding_key, thread_turns, thread_is_open,   # noqa: E402
-                         note_group_key, note_thread_id, check_group_key, check_thread_id)
+                         note_group_key, note_thread_id, check_group_key, check_thread_id,
+                         item_group_key, item_thread_id)
+sys.path.insert(0, HERE)
+from mdlite import md_to_html, inline as md_inline                    # noqa: E402  (the "As written" cards)
 
 E = html.escape
 SEV_ORDER = {"critical": 0, "medium": 1, "low": 2}
@@ -184,46 +187,92 @@ def sketch_card(k):
             f'<div class="card-b">{plain_block(k.get("plain"))}{"".join(parts)}'
             + (f'<div class="sk-note">{E(k["note"])}</div>' if k.get("note") else "") + "</div></div>")
 
-VERBATIM_GROUPS = (("acceptance", "Acceptance criteria", "as-written-acceptance"),
-                   ("questions", "Open questions", "as-written-questions"))
+VERBATIM_GROUPS = (("acceptance", "Acceptance criteria", "as-written-acceptance", "criterion", "criteria"),
+                   ("questions", "Open questions", "as-written-questions", "question", "questions"))
 
-def verbatim_band(items):
-    """The plan's own acceptance criteria and open questions, word for word (structure.json → verbatim).
+def code_link(code):
+    """An inline code span that names a repository path (`dev/compose.yaml`, `…:12-20`) opens the file as it
+    is today, or shows the planned-file chip; any other code span stays code."""
+    m = re.match(r"^([\w@.\-]+(?:/[\w@.\-]+)+)(?::\d+(?:-\d+)?)?$", code)
+    return fpath(m.group(1), code) if m and (m.group(1) in STORE or m.group(1) in STATUS) else None
 
-    The reader approves and answers THESE words, so the page shows them as the plan has them — never
-    a paraphrase — with every line numbered as it is in the file and commentable there: a note on
-    line 247 of the story file comes back as that file and that line, which is where the author edits.
-    Plain text, wrapped: the shared highlighter leaves Markdown unlexed on purpose, and a table keeps
-    its columns because the block is monospace. A section taken from a grep's blocks has no line
-    numbers of its own and is numbered from 1, anchored to its source.
+def item_loc(v, it):
+    if it.get("start"):
+        return f'{v["file"]}:{it["start"]}' + (f'-{it["end"]}' if it.get("end") and it["end"] != it["start"] else "")
+    return v.get("file") or v.get("source") or ""
+
+def item_card(v, it, note=None):
+    """One acceptance criterion or open question: the plan's id and title, its text rendered from the plan's
+    Markdown, where it sits in the plan, and a comment box of its own. The comment goes back as an
+    `item_note` keyed by the item's content key (report_keys.item_key), so a re-numbered plan does not
+    move it onto another item."""
+    kind, loc = v["kind"], item_loc(v, it)
+    noun = "criterion" if kind == "acceptance" else "question"
+    body = md_to_html(it.get("text") or "", code_link)
+    short = os.path.basename(loc.split(":", 1)[0]) + (":" + loc.split(":", 1)[1] if ":" in loc else "")
+    return (f'<div class="card it it-{kind}{" noted" if note else ""}" data-id="{E(it["id"])}" data-item="{E(it["id"])}" data-key="{E(it["key"])}">'
+            f'<div class="card-h"><span class="tw">▶</span><span class="pill it-id">{E(it["label"])}</span>'
+            f'<div class="title">{md_inline(it["title"], code_link)}<span class="it-noted" title="You commented on this {noun}">commented</span>'
+            f'<small>{E(short)}</small></div></div>'
+            f'<div class="card-b">'
+            + (f'<div class="md">{body}</div>' if body else "")
+            + f'<div class="floc"><span class="it-loc">{E(loc)}</span><span class="loc cp" data-loc="{E(loc)}" title="Copy {E(loc)}">⧉</span></div>'
+            + f'<div class="it-fb"><textarea placeholder="Your comment on {E(it["label"])}: what should change, or a question…">{E(note or "")}</textarea></div>'
+            + '</div></div>')
+
+def verbatim_band(sections, notes):
+    """The plan's own acceptance criteria and open questions (structure.json → verbatim): a list of cards,
+    one per criterion or question, each with a comment box of its own.
+
+    The reader approves and answers THESE words, so a card shows the plan's own text, rendered from its
+    Markdown — never a paraphrase, never raw syntax. The collector split each section into its items by
+    the section's own shape and kept every item's lines, so a card says where it sits in the plan. A
+    section without items (a structure.json from before the split) renders whole, still the plan's words.
     """
-    if not items:
+    if not sections:
         return []
-    n_ac = sum(1 for v in items if v.get("kind") == "acceptance"); n_q = sum(1 for v in items if v.get("kind") == "questions")
-    what = " and ".join(x for x in [f'{n_ac} acceptance-criteria section{"s" if n_ac != 1 else ""}' if n_ac else "",
-                                    f'{n_q} open-questions section{"s" if n_q != 1 else ""}' if n_q else ""] if x)
+    count = {k: sum(len(v.get("items") or []) for v in sections if v["kind"] == k) for k, *_ in VERBATIM_GROUPS}
+    what = " and ".join(x for x in [
+        (f'{count["acceptance"]} acceptance criteri{"on" if count["acceptance"] == 1 else "a"}' if count["acceptance"] else ""),
+        (f'{count["questions"]} open question{"" if count["questions"] == 1 else "s"}' if count["questions"] else "")] if x)
+    lede = (f"The plan's {what}, in its own words. Tap one to read it in full and leave a comment." if what
+            else "The plan's own acceptance criteria and open questions, in its own words.")
     out = ['<section id="as-written" class="detail as-written"><h2 class="sec-t part part-v" data-collapsed="0">'
            '<span class="lhs"><span class="tw">▼</span>As written in the plan</span>'
-           f'<span class="cnt">{E(what)}, word for word from the plan\'s own files — tap a line number to comment on that line of the plan. Tap to fold.</span></h2>'
-           '<div class="detail-b">']
-    for kind, name, sid in VERBATIM_GROUPS:
-        group = [v for v in items if v.get("kind") == kind]
+           f'<span class="cnt">{E(lede)} Tap here to fold.</span></h2><div class="detail-b">']
+    for kind, name, sid, one, many in VERBATIM_GROUPS:
+        group = [v for v in sections if v.get("kind") == kind]
         if not group:
             continue
-        out.append(f'<section id="{sid}"><h2>{E(name)} <span class="cnt">as written · {len(group)} section{"s" if len(group) != 1 else ""}</span></h2>')
+        n = sum(len(v.get("items") or []) for v in group)
+        files = sorted({os.path.basename(v.get("file") or v.get("source") or "") for v in group} - {""})
+        cnt = (f'{n} {one if n == 1 else many} · ' if n else "") + "from " + ", ".join(files)
+        out.append(f'<section id="{sid}"><h2>{E(name)} <span class="cnt">{E(cnt)}</span></h2>')
         for v in group:
-            lines = (v.get("text") or "").split("\n")
-            if v.get("start"):
-                f, start, anchor = v["file"], int(v["start"]), v["file"]
-                loc, head = f'{f}:{start}-{start + len(lines) - 1}', f'{f} lines {start}–{start + len(lines) - 1}'
-            else:
-                f, start, anchor = v.get("source") or v.get("file") or "plan", 1, "plan:" + (v.get("source") or v.get("file") or "")
-                loc, head = f, f'{f} — its matching blocks, numbered from 1'
-            ctx = f'<span class="vb-ctx">{E(v["context"])}</span>' if v.get("context") else ""
-            rows = code_rows(lines, f, start, "p", data_f=anchor, lang=None)
-            out.append(f'<div class="vb">{ctx}<div class="diff prose" data-file="{E(anchor)}"><div class="hh">{E(head)}'
-                       f'<span class="loc cp" data-loc="{E(loc)}" title="Copy {E(loc)}">⧉</span>'
-                       f'<span class="hint">💬 tap a line number to comment</span></div><pre>{rows}</pre></div></div>')
+            out.append('<div class="it-sec">')
+            if len(group) > 1 and v.get("context"):
+                out.append(f'<div class="it-ctx">{md_inline(v["context"], code_link)}</div>')
+            if v.get("intro"):
+                out.append(f'<div class="it-intro md">{md_to_html(v["intro"], code_link)}</div>')
+            items = v.get("items")
+            if items is None:
+                text = "\n".join((v.get("text") or "").split("\n")[1:])
+                out.append(f'<div class="card open"><div class="card-b"><div class="md">{md_to_html(text, code_link)}</div></div></div>')
+            intros = {g["title"]: g.get("intro") for g in v.get("groups") or []}
+            current, cards = object(), []
+            def flush():
+                if cards:
+                    out.append(f'<div class="it-list" data-fgroup="{E(name)}">' + "".join(cards) + '</div>'); cards.clear()
+            for it in items or []:
+                if it.get("group") != current:
+                    flush(); current = it.get("group")
+                    if current:
+                        out.append(f'<h3 class="it-group">{md_inline(current, code_link)}</h3>')
+                        if intros.get(current):
+                            out.append(f'<div class="it-intro md">{md_to_html(intros[current], code_link)}</div>')
+                cards.append(item_card(v, it, notes.get(it.get("key"))))
+            flush()
+            out.append('</div>')
         out.append('</section>')
     out.append('</div></section><!-- /as-written -->')
     return out
@@ -374,6 +423,14 @@ def main():
         key = e.get("finding_key")
         if key and key in keyed: card_notes[key] = e
         elif e.get("finding"): orphan_notes[note_group_key(e)] = e
+    # Comments on the plan's own acceptance criteria and open questions: the latest per item wins, and
+    # one whose item is no longer in the plan stays in the conversation, labelled as such.
+    live_items = {it["key"]: (v, it) for v in verbatim for it in (v.get("items") or []) if it.get("key")}
+    item_notes = {}
+    for e in fb_events:
+        if e.get("type") == "item_note" and e.get("text"):
+            item_notes[item_group_key(e)] = e
+    item_note_text = {k: e["text"] for k, e in item_notes.items() if k in live_items}
 
     counts = {s: sum(1 for f in findings if f["severity"] == s) for s in SEV_ORDER}
     slug = meta.get("slug") or os.path.basename(os.path.abspath(d))
@@ -412,11 +469,12 @@ def main():
     b.append('<div class="toc">' + "".join(toc) + '</div></header>')
     b.append('<div class="howto" id="howto"><span><b>Steer anywhere:</b> select any text and tap <b>Ask about this</b> · tap a '
              '<b>line number</b> beside any line of code, a sketch included · press a verdict or write a note on a steering point · '
-             'or <b>reply</b> to a thread in Conversation. It all comes back to Claude, who drafts the changes to the plan.'
+             + ('comment on any of the plan\'s acceptance criteria or open questions · ' if verbatim else '')
+             + 'or <b>reply</b> to a thread in Conversation. It all comes back to Claude, who drafts the changes to the plan.'
              '</span><button id="howto-x" title="Dismiss">✕</button></div>')
     # Two levels, each fronted by a BAND the small section headings cannot be mistaken for: the
     # 5-minute version (plain words, pictures, steering points), then the detail (its band is below).
-    follows = ("The plan's own acceptance criteria and open questions follow, word for word, then the detail."
+    follows = ("The plan's own acceptance criteria and open questions follow, one card each with a comment box, then the detail."
                if verbatim else "The detail follows, one level down.")
     b.append('<div class="part part-1"><span class="part-t">The 5-minute version</span>'
              f'<span class="part-c">plain words · pictures · steering points — enough to judge the direction. {follows}</span></div>')
@@ -472,7 +530,7 @@ def main():
     # ---- the plan's own words: its acceptance criteria and open questions, as written --------------
     # Its own band and its own fold, between the 5-minute version and the detail: this is the text the
     # reader approves and answers, so it sits above the analysis of how it will be built.
-    b.extend(verbatim_band(verbatim))
+    b.extend(verbatim_band(verbatim, item_note_text))
 
     # ---- the detail: everything after the 5-minute version, behind ONE fold ----------------------
     # The page's first part IS the 5-minute version (plain words, pictures, steering points); there is
@@ -544,6 +602,16 @@ def main():
     threads += [{"id": note_thread_id(e), "text": e["text"], "kind": "note",
                  "anchor": {"text": "note on a steering point that is no longer on the page", "section": "steering (earlier version)", "finding": e.get("finding")}}
                 for e in orphan_notes.values()]
+    for k, e in item_notes.items():
+        if k in live_items:
+            v, it = live_items[k]
+            noun = "acceptance criterion" if v["kind"] == "acceptance" else "open question"
+            an = {"text": f'{it["label"]} · {it["title"]}', "section": f"as written · {noun}", "finding": it["label"]}
+            if it.get("start"):
+                an.update(file=v["file"], line=it["start"])
+        else:
+            an = {"text": "comment on an item that is no longer in the plan", "section": "as written (earlier version)", "finding": e.get("item")}
+        threads.append({"id": item_thread_id(e), "text": e["text"], "kind": "item_note", "anchor": an})
     ctx_checks = {c["id"]: c for c in checks if c.get("id")}
     ctx_by_key = {check_key(c): c for c in checks}
     check_note_ev = {}
@@ -599,7 +667,7 @@ def main():
              "F.forEach(function(D){if(t!==D&&D.contains(t)){window.dcOpenSection(D.id);if(scroll)t.scrollIntoView();}});};"
              "open(location.hash,true);window.addEventListener('hashchange',function(){open(location.hash,false);});"
              "document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href^=\"#\"]');if(a)open(a.getAttribute('href'),false);},true);});</script>")
-    prior = [{k: v for k, v in e.items() if k in ("ts", "type", "finding", "finding_key", "file", "check", "check_key", "text", "undo", "id", "anchor", "thread", "rid")}
+    prior = [{k: v for k, v in e.items() if k in ("ts", "type", "finding", "finding_key", "file", "check", "check_key", "item", "item_key", "text", "undo", "id", "anchor", "thread", "rid")}
              for e in fb_events][-800:]
     data = {"report_id": report_id, "repo": meta.get("repo", ""), "range_label": f"plan · {slug}", "prior": prior,
             "findings": [{"id": f["id"], "severity": f["severity"], "tags": f.get("tags", [])} for f in findings]}

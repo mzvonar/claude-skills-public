@@ -25,6 +25,10 @@ The last line printed is `OUT=<dir>`. Exit 2 when nothing was collected.
 """
 import argparse, collections, datetime, glob, json, os, re, subprocess, sys
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.normpath(os.path.join(HERE, "..", "..", "changes", "scripts")))
+from report_keys import item_key                                        # noqa: E402  (shared with the renderer and feedback.py)
+
 LANG_BY_EXT = {
     ".kt": "Kotlin", ".kts": "Kotlin", ".ts": "TypeScript", ".tsx": "TypeScript", ".js": "JavaScript",
     ".mjs": "JavaScript", ".cjs": "JavaScript", ".jsx": "JavaScript", ".py": "Python", ".java": "Java",
@@ -61,6 +65,14 @@ VERBATIM_DEFAULT = {
 }
 LABEL_RE = re.compile(r"^\s*(?:\*\*|__)(?P<name>[^*_].*?)(?:\*\*|__)\s*:?\s*$")
 RULE_RE = re.compile(r"^\s*([-*_])(?:\s*\1){2,}\s*$")
+# A section's ITEMS — one acceptance criterion or one open question each, so the page can give every one
+# its own card and comment box. Found by the section's own shape, never by a planning tool's layout.
+# The plan's own id when a heading carries one (`AC-1 — …`, `Q7 — …`, `3. …`), its position otherwise.
+ITEM_ID_RE = re.compile(r"^(?P<id>[A-Z][A-Za-z]{0,5}-?\d+[a-z]?(?:\.\d+)*|\d+(?:\.\d+)*)(?:\s*[—–:.)]+\s*|\s+-\s+|\s+)(?P<title>\S.*)$")
+LIST_RE = re.compile(r"^(?P<ind>[ \t]*)(?P<mark>[-*+]|\d{1,4}[.)])[ \t]+(?P<rest>\S.*)$")
+GWT_RE = re.compile(r"^(?:\*\*|__)?(?P<kw>Given|When|Then|And|But)(?:\*\*|__)?(?=[\s,:])[\s,:]*(?P<rest>.*)$")
+BOLD_LEAD_RE = re.compile(r"^(?:\*\*|__)(?P<b>[^*_\n]{1,140}?)(?:\*\*|__)")
+SENTENCE_RE = re.compile(r"^(?P<s>.+?[.!?])(?:\s+(?=[A-Z(`*_\"'])|$)")
 
 def run(args, cwd, check=True):
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=check).stdout
@@ -166,6 +178,118 @@ def verbatim_sections(text, patterns):
         while last > i and (not lines[last].strip() or RULE_RE.match(lines[last])): last -= 1
         found.append((kind, title, ctx, i, last)); taken = last
     return found
+
+def safe_id(s):
+    """An item id the page can put in an attribute and the server accepts as an identifier."""
+    return re.sub(r"[^A-Za-z0-9_-]+", "-", s).strip("-")[:64] or "item"
+
+def split_title(text):
+    """(title, body) of a list item or paragraph: a bold lead (`**Find the files:** …`) or the first
+    sentence is the card's title, the rest its body — nothing is dropped and nothing is said twice."""
+    lines = text.split("\n")
+    n = 0
+    while n < len(lines) and lines[n].strip() and not (n and (LIST_RE.match(lines[n]) or FENCE_RE.match(lines[n]))):
+        n += 1
+    para, rest = " ".join(l.strip() for l in lines[:n]), "\n".join(lines[n:]).strip("\n")
+    m = BOLD_LEAD_RE.match(para)
+    if m:
+        title, after = m.group("b").strip().rstrip(":").strip(), para[m.end():].lstrip(" :—–-").strip()
+    else:
+        s = SENTENCE_RE.match(para)
+        if s and len(s.group("s")) <= 200:
+            title, after = s.group("s"), para[s.end():].strip()
+        elif len(para) <= 200:
+            title, after = para, ""
+        else:
+            cut = para[:120].rsplit(" ", 1)[0]
+            return cut + " …", text.strip("\n")
+    return title, "\n".join(x for x in (after, rest) if x)
+
+def section_items(lines, first_no):
+    """Split ONE acceptance-criteria or open-questions section (without its own heading or label line)
+    into its items, by the section's own shape: its sub-headings — where a parent heading with no text
+    of its own (`### Group 1` over `#### Q1`) is a GROUP and its children are the items — else its
+    Given/When/Then lines (an epic's label), else its top-level list items, else its paragraphs.
+
+    `first_no` is the file's line number for lines[0], or None when the source has none. Returns
+    (intro, groups, items): the text before the first item, the groups in order, and the items, each
+    {"id", "label", "title", "group", "start", "end", "text"} with `text` the Markdown under its title."""
+    num = (lambda i: first_no + i) if first_no is not None else (lambda i: None)
+    def trim(a, b):
+        while a < b and (not lines[a].strip() or RULE_RE.match(lines[a])): a += 1
+        while b > a and (not lines[b - 1].strip() or RULE_RE.match(lines[b - 1])): b -= 1
+        return a, b
+    def body(a, b):
+        a, b = trim(a, b)
+        return "\n".join(lines[a:b]), a, b
+    fenced, fence = set(), None
+    for i, l in enumerate(lines):
+        m = FENCE_RE.match(l)
+        if m:
+            fenced.add(i); fence = None if fence == m.group(1) else (fence or m.group(1)); continue
+        if fence: fenced.add(i)
+    items, groups = [], []
+    def add(label_id, label, title, group, a, b, text):
+        a, b = trim(a, b)
+        items.append({"id": safe_id(label_id), "label": label, "title": title, "group": group,
+                      "start": num(a) if b > a else None, "end": num(b - 1) if b > a else None, "text": text})
+    def heading_item(t, i, end, group):
+        plain = re.sub(r"^(\*\*|__)(.+?)\1", r"\2", t.strip())
+        m = ITEM_ID_RE.match(plain)
+        label, title = (m.group("id"), m.group("title")) if m else (str(len(items) + 1), t.strip())
+        text, a, b = body(i + 1, end)
+        items.append({"id": safe_id(label), "label": label, "title": title, "group": group,
+                      "start": num(i), "end": num(b - 1) if b > a else num(i), "text": text})
+    hs = headings(lines)
+    if hs:
+        intro = body(0, hs[0][0])[0]
+        top = min(lv for _, lv, _ in hs)
+        tops = [(i, t) for i, lv, t in hs if lv == top]
+        for n, (i, t) in enumerate(tops):
+            end = tops[n + 1][0] if n + 1 < len(tops) else len(lines)
+            kids = [(j, lv, tt) for j, lv, tt in hs if i < j < end]
+            own_end = kids[0][0] if kids else end
+            if kids and sum(1 for l in lines[i + 1:own_end] if l.strip()) <= 3:
+                groups.append({"title": t, "intro": body(i + 1, own_end)[0]})
+                klv = min(lv for _, lv, _ in kids)
+                ks = [(j, tt) for j, lv, tt in kids if lv == klv]
+                for m, (j, tt) in enumerate(ks):
+                    heading_item(tt, j, ks[m + 1][0] if m + 1 < len(ks) else end, t)
+            else:
+                heading_item(t, i, end, None)
+        return intro, groups, items
+    gwt = [i for i, l in enumerate(lines) if i not in fenced and GWT_RE.match(l)]
+    if len(gwt) >= 2:
+        intro = body(0, gwt[0])[0]
+        for n, i in enumerate(gwt):
+            end = gwt[n + 1] if n + 1 < len(gwt) else len(lines)
+            m = GWT_RE.match(lines[i])
+            text = body(i + 1, end)[0]
+            add(f'{m.group("kw").lower()}-{len(items) + 1}', m.group("kw"), m.group("rest").strip(), None, i, end, text)
+        return intro, groups, items
+    marks = [(i, LIST_RE.match(l)) for i, l in enumerate(lines) if i not in fenced and LIST_RE.match(l)]
+    if marks:
+        base = min(len(m.group("ind").expandtabs(4)) for _, m in marks)
+        starts = [(i, m) for i, m in marks if len(m.group("ind").expandtabs(4)) == base]
+        intro = body(0, starts[0][0])[0]
+        for n, (i, m) in enumerate(starts):
+            end = starts[n + 1][0] if n + 1 < len(starts) else len(lines)
+            cut = len(m.group("ind")) + len(m.group("mark")) + 1
+            content = [m.group("rest")] + [l[cut:] if l[:cut].strip() == "" else l.lstrip() for l in lines[i + 1:end]]
+            title, text = split_title("\n".join(content).rstrip())
+            mk = m.group("mark")
+            label = mk.rstrip(".)") if mk[0].isdigit() else str(len(items) + 1)
+            add(label, label, title, None, i, end, text)
+        return intro, groups, items
+    blocks, cur = [], []
+    for i, l in enumerate(lines):
+        if l.strip() or i in fenced: cur.append(i)
+        elif cur: blocks.append(cur); cur = []
+    if cur: blocks.append(cur)
+    for blk in blocks:
+        title, text = split_title("\n".join(lines[blk[0]:blk[-1] + 1]))
+        add(str(len(items) + 1), str(len(items) + 1), title, None, blk[0], blk[-1] + 1, text)
+    return "", groups, items
 
 def extract_paragraphs(text, regex):
     """The blank-line-separated blocks matching `regex` — a paragraph, a list, a status block."""
@@ -295,14 +419,27 @@ def main():
     for kind, extra in ((cfg.get("verbatim") or {}) if isinstance(cfg.get("verbatim"), dict) else {}).items():
         if kind in patterns and isinstance(extra, list):
             patterns[kind] += [p for p in extra if isinstance(p, str)]
-    verbatim = []
+    verbatim, seen_keys = [], set()
     for (label, text), (file, offset) in zip(sources, origins):
         src_lines = text.splitlines()
         for kind, title, ctx, first, last in verbatim_sections(text, patterns):
+            # The section's own heading or label line is its title, not an item: the items start below it.
+            intro, groups, items = section_items(src_lines[first + 1:last + 1],
+                                                 offset + first + 2 if offset is not None else None)
+            for it in items:
+                # The content key a comment on the item's card is filed under (report_keys.item_key, shared
+                # with the renderer and feedback.py). Made unique across the page: two sections can hold
+                # the same sentence, and two cards must never share one comment.
+                key = base = item_key(kind, " | ".join(x for x in (ctx or "", title, it["group"] or "") if x), it["title"])
+                n = 1
+                while key in seen_keys:
+                    n += 1; key = f"{base}-{n}"
+                seen_keys.add(key); it["key"] = key
             verbatim.append({"kind": kind, "title": title, "context": ctx, "source": label, "file": file,
                              "start": offset + first + 1 if offset is not None else None,
                              "end": offset + last + 1 if offset is not None else None,
-                             "text": "\n".join(src_lines[first:last + 1])})
+                             "text": "\n".join(src_lines[first:last + 1]),
+                             "intro": intro, "groups": groups, "items": items})
     structure = {"headings": [{"level": lv, "text": t, "line": i + 1} for i, lv, t in hs], "units": units,
                  "verbatim": verbatim}
     json.dump(structure, open(os.path.join(out, "structure.json"), "w", encoding="utf-8"), indent=1, ensure_ascii=False)
@@ -411,8 +548,10 @@ def main():
     print(f"structure: {len(hs)} headings, {len(units)} units (level-3), "
           f"{sum(u['acceptance_lines'] for u in units)} acceptance lines")
     va = sum(1 for v in verbatim if v["kind"] == "acceptance"); vq = len(verbatim) - va
+    ia = sum(len(v["items"]) for v in verbatim if v["kind"] == "acceptance"); iq = sum(len(v["items"]) for v in verbatim) - ia
     print(f"verbatim: {va} acceptance-criteria section{'' if va == 1 else 's'}, {vq} open-questions section{'' if vq == 1 else 's'}"
-          + (" — shown on the page as written" if verbatim else ""))
+          + (f" — {ia} criteri{'on' if ia == 1 else 'a'} and {iq} question{'' if iq == 1 else 's'}, one card each on the page"
+             if verbatim else ""))
     print(f"grounding: paths {s['paths_found']}/{s['paths']} found"
           + (f" ({s['paths_out_of_range']} with a line range past the file's end)" if s['paths_out_of_range'] else "")
           + f" · bare file names {s['bare_resolved']}/{s['bare_files']} resolved · symbols {s['symbols_found']}/{s['symbols']} present in the tree")

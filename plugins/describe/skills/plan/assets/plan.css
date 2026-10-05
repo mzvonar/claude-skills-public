@@ -1,7 +1,8 @@
 /* plan.css — the plan page's own styles, injected into the shared shell (../changes/assets/template.html)
    by render-plan.py. Everything structural (cards, sheet, comments, map, views) comes from the shell;
-   this file only adds what a PLAN needs: the plain-words block, the steering vocabulary, sketches,
-   the assumption tags, and the fold that holds everything after the 5-minute version. */
+   this file only adds what a PLAN needs: the plain-words block, the steering vocabulary, the plan's
+   own acceptance criteria and open questions as cards, sketches, the assumption tags, and the fold
+   that holds everything after the 5-minute version. */
 
 /* The opening. Big enough to be read first, quiet enough not to look like a warning. */
 .pw{font-size:1.02rem;line-height:1.6;color:var(--fg)}
@@ -92,17 +93,45 @@ section.detail>h2.sec-t.part:hover{border-color:var(--info)}
 section.detail>.detail-b{border-left:3px solid var(--line2);padding-left:1rem;margin-left:.5rem}
 @media(max-width:560px){section.detail>.detail-b{padding-left:.65rem;margin-left:.25rem}}
 /* The plan's own words ("As written in the plan"): a band of its own and the same fold as the detail,
-   told apart by colour, so the reader knows these lines are the plan's text and not the page's reading
-   of it. The lines WRAP — code lines scroll sideways, prose on a phone must not — under a hanging
-   indent the width of the shell's line-number gutter (3.6em + its padding, border and margin ≈ 5.2em
-   at the code size), so a wrapped line continues under the text and not under the number; and they
-   read at full contrast, since a dimmed context line would say "not the point" and here it is. */
+   told apart by colour, so the reader knows these cards hold the plan's text and not the page's reading
+   of it. One card per acceptance criterion or open question — the plan's id in the pill, its title, its
+   text rendered from Markdown — with a comment box of its own; a card the reader has commented on shows
+   the 💬 mark while shut, so the list says where they have already spoken. */
 section.as-written>h2.sec-t.part{border-left-color:var(--low)}
 section.as-written>h2.sec-t.part:hover{border-color:var(--low)}
-.vb{margin:.5rem 0 .9rem}
-.vb-ctx{display:block;font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:var(--fg3);margin-bottom:.25rem}
-.diff.prose{overflow-x:hidden}
-.diff.prose .hh{white-space:normal;overflow-wrap:anywhere}
-.diff.prose .hh .loc{margin-left:.5rem;cursor:pointer;color:var(--fg3)}
-.diff.prose .l{white-space:pre-wrap;overflow-wrap:anywhere;padding-left:calc(.6rem + 5.2em);text-indent:-5.2em}
-.diff.prose .l.p{color:var(--fg)}
+.it-sec{margin:.3rem 0 1rem}
+.it-ctx{font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:var(--fg3);margin:.7rem 0 .35rem}
+.it-intro{font-size:.88rem;color:var(--fg2);margin:.2rem 0 .7rem}
+h3.it-group{font-size:.85rem;font-weight:700;color:var(--fg);margin:1.1rem 0 .45rem;line-height:1.35}
+.card.it{border-left:4px solid var(--low)}
+.card.it-questions{border-left-color:var(--info)}
+.pill.it-id{background:rgba(104,211,145,.14);color:var(--low);min-width:2.2em;text-align:center}
+.it-questions .pill.it-id{background:rgba(99,179,237,.16);color:var(--info)}
+.card.it .title{font-weight:600;line-height:1.4}
+.card.it .title code{font-family:var(--mono);font-size:.84em;font-weight:500}
+.it-noted{display:none;margin-left:.45rem;font-size:.64rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--low);border:1px solid var(--low);border-radius:5px;padding:.05rem .35rem;vertical-align:middle}
+.card.it.noted .it-noted{display:inline-block}
+.it-loc{font-family:var(--mono);font-size:.72rem;color:var(--fg3);overflow-wrap:anywhere}
+.it-fb textarea{width:100%;font:inherit;font-size:.85rem;background:var(--bg2);color:var(--fg);border:1px solid var(--line2);border-radius:8px;padding:.5rem .7rem;min-height:44px;resize:vertical}
+.card.it.noted .it-fb textarea{border-color:var(--low)}
+/* Markdown, rendered: what the plan's author wrote, readable on a phone — nothing scrolls sideways but a
+   code block or a wide table, each in its own box. */
+.md{font-size:.9rem;line-height:1.55;color:var(--fg);overflow-wrap:anywhere}
+.md>*:first-child{margin-top:0}
+.md p{margin:.45rem 0}
+.md ul,.md ol{margin:.35rem 0;padding-left:1.25rem}
+.md li{margin:.22rem 0}
+.md li>p{margin:.15rem 0}
+.md code{font-family:var(--mono);font-size:.82em;background:var(--bg2);border:1px solid var(--line);border-radius:4px;padding:.02rem .3rem}
+.md pre{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:.55rem .7rem;overflow-x:auto;font-size:.8rem;line-height:1.45}
+.md pre code{background:none;border:0;padding:0;font-size:inherit;overflow-wrap:normal;white-space:pre}
+.md blockquote{margin:.45rem 0;padding-left:.75rem;border-left:3px solid var(--line2);color:var(--fg2)}
+.md .md-table{overflow-x:auto;margin:.45rem 0}
+.md table{border-collapse:collapse;font-size:.82rem}
+.md th,.md td{border:1px solid var(--line);padding:.3rem .5rem;text-align:left;vertical-align:top}
+.md th{background:var(--bg2);font-weight:600}
+.md .md-h{font-weight:700;margin:.7rem 0 .25rem}
+.md hr{border:0;border-top:1px solid var(--line);margin:.7rem 0}
+.md a{color:var(--info)}
+.md .md-ref{border-bottom:1px dotted var(--fg3)}
+.md button.fpath{font-size:.78rem;vertical-align:baseline}

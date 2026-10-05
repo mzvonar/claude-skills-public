@@ -571,7 +571,7 @@ __BODY__
   // Feedback belongs to the REPORT, not to this browser. Events the server already holds are
   // baked into the page at render time and merged in here, so a re-render — or a second device,
   // or cleared site data — never shows a card as un-verified when someone verified it.
-  const sig = e => [e.ts, e.type, e.finding || '', e.finding_key || '', e.check || '', e.check_key || '', e.file || '', e.id || ''].join('|');
+  const sig = e => [e.ts, e.type, e.finding || '', e.finding_key || '', e.check || '', e.check_key || '', e.item_key || '', e.file || '', e.id || ''].join('|');
   {
     const seen = new Set(fb.map(sig));
     (R.prior || []).forEach(e => { if (!seen.has(sig(e))) { seen.add(sig(e)); fb.push(Object.assign({}, e, {sent: true})); } });
@@ -664,6 +664,19 @@ __BODY__
     // and read as lost.
     const mine = fb.filter(e => e.type === 'note' && e.finding_key === key && e.text).at(-1);
     if (mine && mine.text !== ta.value) { ta.value = mine.text; }
+  });
+  // A comment on one of a plan's OWN acceptance criteria or open questions (/describe:plan's "As
+  // written" cards). Its own event type, not `note`: a note is a steer on a finding or steering point
+  // and feeds the verdict digest, which a comment on a criterion is not. Keyed by the item's CONTENT
+  // key, like a note, so re-numbering the plan never moves a comment onto another item.
+  $$('.it-fb textarea').forEach(ta => {
+    const card = ta.closest('.card');
+    const id = card.dataset.item, key = card.dataset.key;
+    const mark = () => card.classList.toggle('noted', !!ta.value.trim());
+    ta.addEventListener('change', () => { if (ta.value.trim()) { event('item_note', null, {item: id, item_key: key, text: ta.value.trim()}); toast('Comment saved'); } mark(); });
+    const mine = fb.filter(e => e.type === 'item_note' && e.item_key === key && e.text).at(-1);
+    if (mine && mine.text !== ta.value) { ta.value = mine.text; }
+    mark();
   });
   // expand a file in "Everything else"
   // file store: lazy code for rows + sheet for ⟨/⟩ chips

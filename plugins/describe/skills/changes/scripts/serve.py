@@ -55,16 +55,17 @@ def sanitize_event(e):
     carefully the template escapes it — and the template is one missed `esc()` away from an XSS that
     reads `raw.diff` same-origin. Two rules, both narrow:
 
-      * `id`, `thread` and `rid` are IDENTIFIERS and are spliced into DOM ids and lookups. Anything
-        outside `[A-Za-z0-9_-]{1,64}` is not an id a client of this page ever generates, so it is an
-        attack signature rather than a shape to accommodate — drop the event whole.
+      * `id`, `thread`, `rid`, `item` and `item_key` are IDENTIFIERS and are spliced into DOM ids,
+        attributes and lookups. Anything outside `[A-Za-z0-9_-]{1,64}` is not an id a client of this
+        page ever generates, so it is an attack signature rather than a shape to accommodate — drop the
+        event whole.
       * `anchor.line` is a line NUMBER. Coerce it; drop the key when it will not coerce.
 
     This closes the class the template's escaping closes one instance of. Neither replaces the other:
     a future field could reach a sink without passing through here.
     """
     if not isinstance(e, dict): return None
-    for k in ("id", "thread", "rid"):
+    for k in ("id", "thread", "rid", "item", "item_key"):
         v = e.get(k)
         if v is not None and not (isinstance(v, str) and ID_RE.match(v)): return None
     a = e.get("anchor")

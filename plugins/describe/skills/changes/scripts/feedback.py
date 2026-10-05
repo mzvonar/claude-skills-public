@@ -22,7 +22,8 @@ import argparse, json, os, sys, datetime, urllib.request, collections
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from report_keys import (check_key, finding_key, thread_turns, thread_is_open,  # noqa: E402
-                         note_group_key, note_thread_id, check_group_key, check_thread_id)
+                         note_group_key, note_thread_id, check_group_key, check_thread_id,
+                         item_group_key, item_thread_id)
 # One derivation of every thread identity, shared with the renderer — see report_keys.
 
 HOME = os.environ.get("DESCRIBE_CHANGES_HOME") or os.path.expanduser("~/.describe-changes")
@@ -42,7 +43,17 @@ def skill_version():
                 if not l.startswith("#") and l.strip(): return l.strip()
     return "dev"
 def load_ctx(d):
-    ctx = {"repo": "", "range": "", "findings": {}, "checks": {}}
+    ctx = {"repo": "", "range": "", "findings": {}, "checks": {}, "items": {}}
+    # A plan page's own acceptance criteria and open questions (/describe:plan, structure.json → verbatim),
+    # by the content key their comments are filed under. Absent on a changes report.
+    try:
+        st = json.load(open(os.path.join(d, "structure.json")))
+        for v in st.get("verbatim") or []:
+            for it in v.get("items") or []:
+                if it.get("key"):
+                    ctx["items"][it["key"]] = {"id": it.get("id"), "label": it.get("label"), "title": it.get("title"),
+                                               "kind": v.get("kind"), "file": v.get("file"), "line": it.get("start")}
+    except Exception: pass
     try:
         m = json.load(open(os.path.join(d, "meta.json"))); ctx["repo"], ctx["range"] = m.get("repo", ""), m.get("range_label", "")
     except Exception: pass
@@ -96,12 +107,16 @@ def cmd_ingest(a):
         if key in seen: continue
         f = ctx["findings"].get(ev.get("finding") or "")
         c = ctx["checks"].get(ev.get("check") or "")
+        extra = {}
+        if ev.get("item") or ev.get("item_key"):
+            it = ctx["items"].get(ev.get("item_key") or "") or {}
+            extra["item"] = dict(it, key=ev.get("item_key")) if it else {"id": ev.get("item"), "key": ev.get("item_key")}
         out.append(base(ctx, ev.get("type", "unknown"), ts=ev.get("ts") or now(), source="ui",
                         finding=f or ({"id": ev.get("finding")} if ev.get("finding") else None),
                         check=(dict(c, key=ev.get("check_key")) if c else
                                ({"id": ev.get("check"), "key": ev.get("check_key")} if ev.get("check") else None)),
                         status=ev.get("status"),
-                        file=ev.get("file"), text=ev.get("text"), undo=ev.get("undo")))
+                        file=ev.get("file"), text=ev.get("text"), undo=ev.get("undo"), **extra))
     append(out)
     kinds = collections.Counter(e["type"] for e in out)
     print(f"ingested {len(out)} new events → {LESSONS}" + (f" ({dict(kinds)})" if out else ""))
@@ -185,6 +200,27 @@ def cmd_comments(a):
                      "section": "how to verify", "finding": e.get("finding"),
                      "file": None, "line": None, "side": None, "hunk": None,
                      "answered": tid in ans})
+    # Comments typed into a plan page's ACCEPTANCE-CRITERION or OPEN-QUESTION card (/describe:plan's "As
+    # written" band). A fourth surface, listed here for the reason the docstring gives: a surface a reader
+    # can type into that this command does not list is a surface whose words are silently lost. The row
+    # names the item and the plan's own line, which is where the author edits.
+    ctx_items = load_ctx(a.dir)["items"]
+    item_notes = {}
+    for e in fb:
+        if e.get("type") != "item_note" or not e.get("text") or not (e.get("item") or e.get("item_key")):
+            continue
+        item_notes[item_group_key(e)] = e
+    for group, e in item_notes.items():
+        it = ctx_items.get(e.get("item_key") or "")
+        noun = {"acceptance": "an acceptance criterion", "questions": "an open question"}.get((it or {}).get("kind"), "a plan item")
+        tid = item_thread_id(e)
+        rows.append({"id": tid,
+                     "kind": f"comment on {noun}" if it else "comment on a plan item (from an earlier version)",
+                     "ts": e.get("ts"), "text": e["text"],
+                     "selection": (f'{it["label"]} · {it["title"]}' if it else e.get("item")), "context": None,
+                     "section": "as written", "finding": (it or {}).get("label") or e.get("item"),
+                     "file": (it or {}).get("file") if (it or {}).get("line") else None, "line": (it or {}).get("line"),
+                     "side": None, "hunk": None, "answered": tid in ans})
     for e in fb:
         if e.get("type") != "comment" or not e.get("id") or e["id"] in seen: continue
         seen.add(e["id"]); an = e.get("anchor") or {}
@@ -240,6 +276,8 @@ def cmd_notes(a):
             notes.append(("finding " + (e.get("finding") or "?"), e.get("ts"), e["text"]))
         elif t == "check_note" and e.get("text"):
             notes.append(("check " + (e.get("check") or "?"), e.get("ts"), e["text"]))
+        elif t == "item_note" and e.get("text"):
+            notes.append(("item " + (e.get("item") or e.get("item_key") or "?"), e.get("ts"), e["text"]))
         elif t == "check_verified" and e.get("check"):
             verified.add(e["check"]); unmarked.discard(e["check"])
         elif t == "undo" and e.get("undo") == "check_verified" and e.get("check"):
@@ -290,6 +328,15 @@ def cmd_answer(a):
             c = {"id": a.id, "text": note["text"],
                  "anchor": {"text": "note on this verification check", "section": "how to verify",
                             "finding": note.get("finding")}}
+    if c is None and a.id.startswith("itemnote-"):
+        # A comment on one of a plan's own acceptance criteria or open questions. Matched through the same
+        # derivation the id was minted by, so `comments` and `answer` cannot disagree on which comment it is.
+        note = next((e for e in reversed(fb) if e.get("type") == "item_note" and e.get("text")
+                     and item_thread_id(e) == a.id), None)
+        if note is not None:
+            c = {"id": a.id, "text": note["text"],
+                 "anchor": {"text": "comment on this item of the plan", "section": "as written",
+                            "finding": note.get("item")}}
     if c is None: raise SystemExit(f"comment {a.id} not found in {a.dir}/feedback.jsonl")
     with open(os.path.join(a.dir, "answers.jsonl"), "a") as fh:
         fh.write(json.dumps({"id": a.id, "ts": now(), "text": text.strip()}) + "\n")

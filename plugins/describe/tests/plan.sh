@@ -97,6 +97,23 @@ nothing
 ## Points to settle
 - only a configured name finds this
 F
+# A plan whose criteria are a numbered LIST and whose questions are PARAGRAPHS: no sub-headings to split
+# on, so the items come from the list's entries (a bold lead is the title; otherwise the first sentence,
+# the rest the body) and from the paragraphs.
+cat > docs/plans/listy.md <<'F'
+# Listy plan
+
+## Acceptance criteria
+1. **Login works:** the page shows the list.
+2. The second criterion has `code` and **bold**. It continues here
+   on a wrapped line.
+   - and a nested point
+
+## Decisions needed
+First paragraph question. With more text after.
+
+Second paragraph question?
+F
 git add -A && git commit -qm init
 
 # ---- 1. collect + ground ------------------------------------------------------------------------
@@ -153,9 +170,10 @@ OUTB="$(python3 "$S/collect-plan.py" --grep-from docs/plans/codes.md 'Background
 mkdir -p .claude && printf '{"describe":{"plan":{"verbatim":{"questions":["points to settle\\\\b"]}}}}\n' > .claude/claude-skills.json
 OUTC="$(python3 "$S/collect-plan.py" --from docs/plans/story.md --slug story-7-2-config | tail -1 | sed 's/^OUT=//')"
 rm .claude/claude-skills.json
-python3 - "$OUT" "$OUTS" "$OUTB" "$OUTC" <<'PY'
+OUTL="$(python3 "$S/collect-plan.py" --from docs/plans/listy.md --slug listy | tail -1 | sed 's/^OUT=//')"
+python3 - "$OUT" "$OUTS" "$OUTB" "$OUTC" "$OUTL" <<'PY'
 import json, os, sys
-epic, story, bg, conf = sys.argv[1:5]
+epic, story, bg, conf, listy = sys.argv[1:6]
 V = lambda d: json.load(open(os.path.join(d, "structure.json")))["verbatim"]
 def lines_of(path, a, b): return open(path, encoding="utf-8").read().splitlines()[a - 1:b]
 # A heading section: its subtree, the criteria's own headings inside it, trailing blank and --- trimmed.
@@ -180,10 +198,64 @@ assert e[0]["text"].split("\n") == lines_of("docs/plans/codes.md", e[0]["start"]
 assert V(bg) == [], V(bg)
 c = V(conf)
 assert [x["title"] for x in c] == ["Acceptance Criteria", "Open questions for the gate", "Points to settle"] and c[2]["kind"] == "questions", c
+# Each section is split into its ITEMS, one card each on the page: a criterion's or a question's own
+# heading gives its id and title, a parent heading with no text of its own is a GROUP, and every item
+# keeps the plan file's own line numbers.
+it = ac["items"]
+assert [(x["id"], x["label"], x["title"]) for x in it] == [("AC-1", "AC-1", "first"), ("AC-2", "AC-2", "second")], it
+assert src[it[0]["start"] - 1] == "### AC-1 — first" and it[0]["text"] == "- one `CodeValue`\n- two", it[0]
+assert it[1]["text"] == "| a | b |\n|---|---|\n| 1 | 2 |" and it[1]["end"] == ac["end"], it[1]
+assert ac["intro"] == "" and ac["groups"] == [], ac
+q = oq["items"]
+assert [(x["id"], x["title"], x["group"]) for x in q] == [("R1", "a rule", "Group 1 — rules")], q
+assert oq["groups"] == [{"title": "Group 1 — rules", "intro": ""}] and "a label inside a section already taken" in q[0]["text"], oq
+# An epic's Given/When/Then lines: one item each, the keyword as the label, the FILE's line numbers.
+ei = e[0]["items"]
+assert [(x["label"], x["title"]) for x in ei] == [("Given", "the platform's snapshot"), ("When", "it is mapped"),
+                                                   ("Then", "`CodeValue` carries `status`"), ("And", "`alphaThing` stays")], ei
+assert [x["id"] for x in ei] == ["given-1", "when-2", "then-3", "and-4"], ei
+assert codes[ei[2]["start"] - 1] == "**Then** `CodeValue` carries `status`", ei[2]
+# A list: one item per top-level entry — a bold lead or the first sentence is the title, the rest the
+# body, nothing said twice; paragraphs, when there is nothing else to split on.
+assert [(x["label"], x["title"], x["text"]) for x in c[2]["items"]] == [("1", "only a configured name finds this", "")], c[2]["items"]
+la, lq = V(listy)
+assert [(x["label"], x["title"], x["text"]) for x in la["items"]] == [
+    ("1", "Login works", "the page shows the list."),
+    ("2", "The second criterion has `code` and **bold**.", "It continues here on a wrapped line.\n- and a nested point")], la["items"]
+assert [(x["label"], x["title"], x["text"]) for x in lq["items"]] == [
+    ("1", "First paragraph question.", "With more text after."), ("2", "Second paragraph question?", "")], lq["items"]
+listy_src = open("docs/plans/listy.md", encoding="utf-8").read().splitlines()
+assert listy_src[la["items"][1]["start"] - 1].startswith("2. The second") and listy_src[la["items"][1]["end"] - 1] == "   - and a nested point", la["items"][1]
+# Every item carries a content key (report_keys.item_key), unique across the page.
+keys = [x["key"] for v in V(story) + V(epic) + V(listy) for x in v["items"]]
+assert all(keys) and len(keys) == len(set(keys)), keys
 print("verbatim OK")
 PY
-grep -q '^verbatim: 1 acceptance-criteria section, 1 open-questions section' <(python3 "$S/collect-plan.py" --from docs/plans/story.md --slug story-7-2) \
-  || fail "collect-plan does not report the verbatim sections"
+grep -q '^verbatim: 1 acceptance-criteria section, 1 open-questions section — 2 criteria and 1 question, one card each on the page' <(python3 "$S/collect-plan.py" --from docs/plans/story.md --slug story-7-2) \
+  || fail "collect-plan does not report the verbatim sections and their items"
+
+# ---- 1c. the Markdown a card renders: safe first, then readable ----------------------------------
+python3 - "$S" <<'PY' || fail "mdlite"
+import sys
+sys.path.insert(0, sys.argv[1])
+from mdlite import md_to_html as md, inline
+# Safe: everything escaped, only known tags out, a link opens only for http(s).
+assert md("a <script>x</script> & `<b>`") == "<p>a &lt;script&gt;x&lt;/script&gt; &amp; <code>&lt;b&gt;</code></p>"
+assert "href" not in md("[bad](javascript:alert(1)) text") and "alert(1)" not in md("[bad](javascript:alert(1)) text").split("title=")[0]
+assert md("[doc](https://x.test/a?b=1&c=2)") == '<p><a href="https://x.test/a?b=1&amp;c=2" target="_blank" rel="noopener noreferrer">doc</a></p>'
+# Readable: emphasis, but never inside identifiers; a plan's escaped backtick inside a code span is a backtick.
+assert md("keep SOME_ENV_VAR and snake_case plain, _this_ is em") == "<p>keep SOME_ENV_VAR and snake_case plain, <em>this</em> is em</p>"
+assert inline("exactly once: `**Pinned tag:** \\`0.6.0\\``") == "exactly once: <code>**Pinned tag:** `0.6.0`</code>"
+assert "" not in md("[`a`](https://x.test) and \\* and `x`")
+assert md("- one\n- two\n  - nested **b**\n- three\n  continued") == \
+    "<ul><li>one</li><li><p>two</p><ul><li>nested <strong>b</strong></li></ul></li><li>three continued</li></ul>"
+assert md("3. third\n4. fourth") == '<ol start="3"><li>third</li><li>fourth</li></ol>'
+assert md("```yaml\nk: <v>\n```\nafter") == "<pre><code>k: &lt;v&gt;</code></pre><p>after</p>"
+assert md("| a | b |\n|---|---|\n| 1 | `2` |") == '<div class="md-table"><table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td><code>2</code></td></tr></tbody></table></div>'
+# A code span naming a repository path can become a button that opens the file.
+assert inline("see `src/a.ts:3`", code_link=lambda c: "<B>" if c.startswith("src/") else None) == "see <B>"
+print("mdlite OK")
+PY
 
 # ---- 2. a report, the way the analyst writes it --------------------------------------------------
 cat > "$OUT/report.json" <<'J'
@@ -255,13 +327,41 @@ grep -q 'id="detail" class="detail"><h2 class="sec-t part part-2" data-collapsed
 grep -q 'section.detail>h2.sec-t.part' "$H" || fail "plan.css not injected into the shell"
 grep -q "\['as-written','detail'\]" "$H" && grep -q "dcOpenSection(D.id)" "$H" || fail "a link into a fold (the detail, the plan's own words) does not unfold it"
 if grep -q 'id="quick"' "$H"; then fail "the 5-minute toggle is back — the 5-minute version is the page's first part, not a mode"; fi
-# The plan's own words: a band and a fold of their own, between the 5-minute version and the detail,
-# every line numbered as it is IN THE PLAN FILE and commentable there.
+# The plan's own words: a band and a fold of their own, between the 5-minute version and the detail —
+# a list of cards, ONE per criterion or question, each its text rendered from the plan's Markdown and a
+# comment box of its own. Never raw Markdown, never numbered source lines.
 grep -q 'id="as-written" class="detail as-written"><h2 class="sec-t part part-v" data-collapsed="0"' "$H" || fail "the as-written band is missing, not a fold, or not open by default"
 grep -q 'href="#as-written"' "$H" || fail "the TOC does not link the plan's own words"
-AS_AT="$(python3 -c 'import json,sys; v=json.load(open(sys.argv[1]))["verbatim"][0]; print(v["start"])' "$OUT/structure.json")"
-grep -q "data-f=\"docs/plans/codes.md\" data-n=\"$AS_AT\"" "$H" || fail "an as-written line does not carry the plan file's own line number ($AS_AT)"
 grep -q 'section.as-written>h2.sec-t.part' "$H" || fail "the as-written band's styles are not injected"
+python3 - "$H" "$OUT/structure.json" <<'PY' || fail "as-written cards"
+import json, re, sys
+h = open(sys.argv[1], encoding="utf-8").read()
+items = json.load(open(sys.argv[2]))["verbatim"][0]["items"]
+band = h[h.index('<section id="as-written"'):h.index("<!-- /as-written -->")]
+cards = re.findall(r'<div class="card it it-acceptance" data-id="([^"]+)" data-item="[^"]+" data-key="([^"]+)">', band)
+assert cards == [(x["id"], x["key"]) for x in items], ("one card per item, keyed by its content key", cards)
+assert band.count('<div class="it-fb"><textarea') == len(items) == 4, "every criterion needs its own comment box"
+assert '<span class="pill it-id">Then</span><div class="title"><code>CodeValue</code> carries <code>status</code>' in band, "a title is not rendered from Markdown"
+assert 'class="l p' not in band and 'data-n=' not in band, "the band still prints numbered source lines"
+visible = re.sub(r"<[^>]+>", " ", re.sub(r"<code>.*?</code>|<pre>.*?</pre>", " ", band, flags=re.S))
+assert "**" not in visible and "`" not in visible, "raw Markdown left in the band"
+assert "codes.md:" in band, "a card does not say where it sits in the plan"
+print("as-written cards OK")
+PY
+# The other shapes, rendered: headings with a group (the story), a numbered list and paragraphs (listy).
+for D in "$OUTS" "$OUTL"; do cp "$OUT/report.json" "$D/report.json" && python3 "$S/render-plan.py" --dir "$D" >/dev/null || fail "render of $D failed"; done
+python3 - "$OUTS/index.html" "$OUTL/index.html" <<'PY' || fail "as-written shapes"
+import re, sys
+st, li = (open(p, encoding="utf-8").read() for p in sys.argv[1:3])
+assert re.findall(r'class="card it it-(\w+)[^"]*" data-id="([^"]+)"', st) == [("acceptance", "AC-1"), ("acceptance", "AC-2"), ("questions", "R1")], "story cards"
+assert '<h3 class="it-group">Group 1 — rules</h3>' in st, "a group heading is missing"
+assert "<ul><li>one <code>CodeValue</code></li><li>two</li></ul>" in st, "a criterion's list is not rendered"
+assert "<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>" in st, "a criterion's table is not rendered"
+assert '<span class="pill it-id">1</span><div class="title">Login works' in li, "a bold lead is not the title"
+assert "The second criterion has <code>code</code> and <strong>bold</strong>." in li and "<li>and a nested point</li>" in li, "a list item's title and body"
+assert re.findall(r'class="card it it-questions[^"]*" data-id="([^"]+)"', li) == ["1", "2"], "paragraph questions"
+print("as-written shapes OK")
+PY
 python3 - "$H" <<'PY' || fail "page order"
 import sys
 h = open(sys.argv[1], encoding="utf-8").read()
@@ -373,23 +473,34 @@ r = json.load(open(os.path.join(sys.argv[1], "report.json")))
 print(finding_key(next(f for f in r["findings"] if f["id"] == "S2")))
 PY
 )"
+# A comment typed into one of the plan's own criteria cards: the epic's Given line, by its content key.
+IKEY="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["verbatim"][0]["items"][0]["key"])' "$OUT/structure.json")"
+ILINE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["verbatim"][0]["items"][0]["start"])' "$OUT/structure.json")"
 printf '%s\n' '{"ts":"2026-01-01T00:00:00Z","type":"more","finding":"S1","report_id":"x"}' \
   "{\"ts\":\"2026-01-01T00:00:01Z\",\"type\":\"note\",\"finding\":\"S2\",\"finding_key\":\"$KEY\",\"text\":\"sort by label, please\"}" \
   '{"ts":"2026-01-01T00:00:02Z","type":"comment","id":"cplan1","text":"why a new file?","anchor":{"text":"SnapshotValue","context":"…","section":"sketches","finding":"K2","file":"sketch:K2","line":1,"side":"new"}}' \
+  "{\"ts\":\"2026-01-01T00:00:03Z\",\"type\":\"item_note\",\"item\":\"given-1\",\"item_key\":\"$IKEY\",\"text\":\"which snapshot?\"}" \
   > "$OUT/feedback.jsonl"
 python3 "$CH/feedback.py" comments --dir "$OUT" --open > "$T/cm" || fail "comments"
 grep -q '\[cplan1\] OPEN' "$T/cm" || fail "a comment on a sketch line is not listed"
 grep -q 'at:        sketch:K2:1' "$T/cm" || fail "a sketch-line comment does not report its anchor: $(cat "$T/cm")"
 grep -q "\[note-$KEY\] OPEN · note" "$T/cm" || fail "a steer note is not listed as a thread: $(cat "$T/cm")"
+grep -q "\[itemnote-$IKEY\] OPEN · comment on an acceptance criterion · as written · Given" "$T/cm" || fail "a comment on a criterion card is not listed as a thread: $(cat "$T/cm")"
+grep -q "at:        docs/plans/codes.md:$ILINE" "$T/cm" || fail "a criterion comment does not say where the criterion sits in the plan: $(cat "$T/cm")"
+python3 "$CH/feedback.py" notes --dir "$OUT" | grep -q '\[item given-1\]' || fail "notes does not list a criterion comment"
 python3 "$CH/feedback.py" answer --dir "$OUT" --id cplan1 --improvement "say why the wire shape is its own file" --text "It mirrors the platform's contract, generated from it." | grep -q "answered cplan1" || fail "answer"
+python3 "$CH/feedback.py" answer --dir "$OUT" --id "itemnote-$IKEY" --text "It is the platform snapshot of the table." | grep -q "answered itemnote-$IKEY" || fail "answer on a criterion comment"
 python3 "$S/render-plan.py" --dir "$OUT" >/dev/null
 grep -q 'id="t-cplan1"' "$H" && grep -q "mirrors the platform" "$H" || fail "the answer is not rendered into Conversation"
 grep -q 'sort by label, please</textarea>' "$H" || fail "the steer note is not replayed into its card"
 grep -q "id=\"t-note-$KEY\"" "$H" || fail "the steer note has no thread"
+grep -q 'class="card it it-acceptance noted" data-id="given-1"' "$H" || fail "a commented criterion card is not marked"
+grep -q 'which snapshot?</textarea>' "$H" || fail "the criterion comment is not replayed into its card"
+grep -q "id=\"t-itemnote-$IKEY\"" "$H" && grep -q "It is the platform snapshot of the table." "$H" || fail "the criterion comment and its answer are not in Conversation"
 # Answered threads stay OPEN on the page: the reader comes back for the answers, and a collapsed
 # section read as "no answers" on a phone.
 grep -q '<section id="conversation"><h2 class="sec-t" data-collapsed="0"' "$H" || fail "the Conversation section is collapsed by default"
-python3 "$CH/feedback.py" ingest "$OUT/feedback.jsonl" --dir "$OUT" | grep -q "ingested 3" || fail "ingest"
+python3 "$CH/feedback.py" ingest "$OUT/feedback.jsonl" --dir "$OUT" | grep -q "ingested 4" || fail "ingest"
 python3 "$CH/feedback.py" digest | grep -q "under-rated" || fail "a ▲ verdict does not reach the digest"
 # serve: the same server, the same gate, from a plan dir.
 # A FREE port, not a fixed one: a maintainer's box has live report servers on the 879x range, and a

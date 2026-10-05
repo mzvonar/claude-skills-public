@@ -1,6 +1,6 @@
 ---
 name: plan
-version: "2.1.0"
+version: "2.2.0"
 description: >
   Present a PLAN to the person who must steer it, before anyone implements it — an ad-hoc plan from
   the conversation, a story or task spec, a change proposal, or a whole epic. Plain words on what will
@@ -77,9 +77,13 @@ steering point (the plan is reasoning about code that is not there).
 `structure.json → verbatim` holds the plan's **own acceptance criteria and open questions, word for
 word**: every heading or bold label named that way (`## Acceptance Criteria`, `**Acceptance
 Criteria:**` inside an epic's story, `## Open questions for T2`, `Decisions needed`, …), each with the
-file and the lines it came from. Found by what a section is called, never by a planning tool's
-layout; the collector prints `verbatim: N … sections`. The page shows them as written — you never
-retype them (step 3).
+file and the lines it came from, and split into its **items** — one criterion or one question each,
+by the section's own shape: its sub-headings (a parent heading with no text of its own, `### Group 1`
+over `#### Q1`, is a group), else its Given/When/Then lines, else its list entries, else its
+paragraphs. Every item keeps its id (`AC-3`, `Q7`, or its position), its title, its Markdown, its lines
+in the plan file and a content `key`. Found by what a section is called, never by a planning tool's
+layout; the collector prints `verbatim: N … sections — N criteria and N questions`. The page shows
+them as written, one card each — you never retype them (step 3).
 
 `meta.json → languages` is the tree's language census. **Sketches are written in those languages**
 — the one the file you are sketching is in — never in pseudocode, because the reader knows the
@@ -177,8 +181,10 @@ renderer (CDN); the map degrades to its text list. Every path on the page opens 
 today**. The page has two levels, each fronted by a band: the **5-minute version** — the plain words,
 the pictures and the steering points — then **the detail**, whose band is also a fold: open by default,
 one tap shuts it, any link into it unfolds it; there is no mode to switch. Between them, when the plan
-has any, sits **As written in the plan**: its acceptance criteria and open questions word for word,
-in a band and fold of their own, every line numbered as it is in the plan file and commentable there.
+has any, sits **As written in the plan**: its acceptance criteria and open questions in a band and
+fold of their own, as a list of cards — one per criterion or question, the plan's id and title on the
+card, its text rendered from the plan's Markdown when opened, where it sits in the plan file, and a
+comment box of its own.
 If the `Artifact` tool is
 available and the user is remote, you may also
 publish `$OUT/index.html`. Skip all of this with `--chat-only`.
@@ -199,15 +205,17 @@ Do not paste sketches or acceptance criteria into chat. The chat is the page's t
 
 ## 7. Answer, collect the steering, apply it
 
-Stay in this mode until the user moves on. The page takes input the same five ways the changes
-report does — select any text and *Ask about this*, tap a line number beside any code line (a
-sketch's planned lines included: they carry `sketch:<id>:<line>`; a line of the plan's own words
-carries the plan file and its line — the address of the amendment), a note on a steering card, a
-verdict button on it, a reply in a thread — and `comments` returns all of them:
+Stay in this mode until the user moves on. The page takes input the same ways the changes report
+does — select any text and *Ask about this*, tap a line number beside any code line (a sketch's
+planned lines included: they carry `sketch:<id>:<line>`), a note on a steering card, a verdict button
+on it, a reply in a thread — plus a **comment on any of the plan's own acceptance criteria or open
+questions**, typed into that card's box. `comments` returns all of them; a criterion's or a question's
+comment is listed as `[itemnote-<key>] … comment on an acceptance criterion · as written · AC-3`, with
+the plan file and line it sits at — the address of the amendment — and answered by that id:
 
 ```bash
 python3 "$CH/feedback.py" comments --dir "$OUT" --open
-python3 "$CH/feedback.py" notes --dir "$OUT"          # notes typed into steering cards, threads or not
+python3 "$CH/feedback.py" notes --dir "$OUT"          # notes typed into cards (steering, criteria, questions), threads or not
 python3 "$CH/feedback.py" answer --dir "$OUT" --id <id> --improvement "<what the page should have said>" --text "<answer>"
 python3 "$S/render-plan.py" --dir "$OUT"              # the answer appears in Conversation; same URL
 ```
@@ -217,6 +225,8 @@ before work starts) · ▼ *fine as is* (the plan's answer stands) · ✕ *not a
 the list) · ✓ *keep as planned*. They arrive as `more` / `less` / `noise` / `checked` events in
 `$OUT/feedback.jsonl` (one JSON object per line, `finding` = the point's id; an `undo` event
 retracts one) — read them from there, latest per point wins, and a ▲ with a note is an instruction.
+A comment on a criterion or a question arrives as an `item_note` event (`item` = its id, `item_key` =
+its content key); the latest per item wins.
 
 **Turning the steering into the plan:** once the reader has spoken, draft the amendments — which
 document, which section, the sentence as it would read — and put them in chat. **Edit the plan's

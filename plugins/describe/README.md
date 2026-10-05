@@ -83,10 +83,12 @@ divergence scoring).
 - **What stays the same**, **Assumptions** (each `measured`, `read` or `assumed`), **How you'll try
   it**, **Who else is involved**, a **glossary**, and **Grounding** — every path and symbol the plan
   cites, found or not.
-- **As written in the plan** — the plan's own acceptance criteria and open questions, word for word:
-  any heading or bold label so named, whatever tool wrote the plan (`## Acceptance Criteria`,
+- **As written in the plan** — the plan's own acceptance criteria and open questions, in its own
+  words: any heading or bold label so named, whatever tool wrote the plan (`## Acceptance Criteria`,
   `**Acceptance Criteria:**`, `## Open questions for T2`, …; a repo adds its own names under
-  `describe.plan.verbatim`). Every line keeps its number in the plan file and takes a comment there.
+  `describe.plan.verbatim`). One card per criterion or question — split by the section's own
+  sub-headings, Given/When/Then lines, list entries or paragraphs — with its text rendered from the
+  plan's Markdown, where it sits in the plan file, and a comment box of its own.
 - Two levels, each fronted by a band: the **5-minute version** — the plain words, the pictures and
   the steering points — then **the detail**, whose band is also a fold: open by default, one tap
   shuts it (remembered per repo), and any link into it (the table of contents, a hash) unfolds it.
