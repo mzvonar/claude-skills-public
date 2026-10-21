@@ -66,6 +66,16 @@ The prompt is destructive (it offers to reset), so retrying with more pipe varia
 
 **Shared dev DB — probe `migrate deploy` first.** `migrate dev` can demand a reset over an *unrelated* migration's checksum drift while `migrate deploy` applies the actually-pending migration non-destructively. On any DB other sessions share: run `migrate deploy`, then `generate`. Reach for `migrate dev` only when you truly need a *new* migration generated.
 
+**Generate a new migration without touching the shared dev DB — `migrate diff` against a scratch database.** When the dev DB is shared (other worktrees, other sessions) and you only need the SQL, do not let `migrate dev` near it:
+
+1. Create a throwaway database on a Postgres you own — the test container is the usual one (`CREATE DATABASE <scratch>`).
+2. Point the shadow (and, if your `prisma.config.ts` reads it, the direct) URL at it through the env overrides the config already reads — never by editing the env file.
+3. `<pm> exec prisma migrate diff --from-migrations prisma/migrations --to-schema <schemaPath> --script` prints exactly the DDL `migrate dev` would have written. Save it as `prisma/migrations/<timestamp>_<name>/migration.sql`, deleting any `DROP` it emits for an `unmanagedSql` object (see below).
+4. Re-run the same command after writing the migration: it is a one-command drift proof — only the generated `DROP`s for `unmanagedSql` objects may remain.
+5. Drop the scratch database.
+
+The shared dev DB first sees the migration through `migrate deploy`, when the change is ready for it.
+
 **When you need a new migration and `migrate dev` is blocked:**
 
 1. `<pm> exec prisma db push` — sync the dev DB to the schema without touching migration history.
