@@ -36,6 +36,28 @@ describe("parseArgs", () => {
   });
 });
 
+describe("shotStem", () => {
+  it("names a local page by its folder and file, not the whole path", () => {
+    const s = V.shotStem("file:///tmp/very/deep/scratch/run-42/site/index.html");
+    assert.match(s, /^site-index-html-[0-9a-z]+$/);
+  });
+  it("gives pages that differ only in a query value names of their own", () => {
+    const b = V.shotStem("file:///x/site/index.html?variant=b"), c = V.shotStem("file:///x/site/index.html?variant=c");
+    assert.notEqual(b, c);
+    assert.match(b, /variant-b/);
+    assert.notEqual(b.split("-").at(-1), c.split("-").at(-1), "the hash itself must differ, not only the readable part");
+  });
+  it("leaves a long query value such as a token out of the name, and still tells two tokens apart", () => {
+    const a = V.shotStem("http://localhost:8793/Viewer.dc.html?dataset=demo&k=9XM6ds7HzX9U7d4_Gb39UQ");
+    assert.doesNotMatch(a, /9XM6/);
+    assert.match(a, /^localhost-8793-Viewer-dc-html-dataset-demo-k-[0-9a-z]+$/);
+    assert.notEqual(a, V.shotStem("http://localhost:8793/Viewer.dc.html?dataset=demo&k=another-token-value"));
+  });
+  it("stays short for a long URL", () => {
+    assert.ok(V.shotStem("https://example.com/" + "a/".repeat(80) + "page?" + "x=1&".repeat(40)).length <= 90);
+  });
+});
+
 describe("contrast", () => {
   it("is 21:1 for black on white and 1:1 for a colour on itself", () => {
     assert.equal(V.contrast("rgb(0, 0, 0)", "rgb(255, 255, 255)").toFixed(0), "21");

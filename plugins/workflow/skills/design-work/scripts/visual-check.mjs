@@ -57,6 +57,23 @@ export function parseArgs(argv) {
   return o;
 }
 
+// The file-name stem of a URL's screenshots: readable (a local page by its folder and file, a served one by host and
+// path, then the query with long values such as tokens left out) and unique (a short hash of the whole URL), so two
+// pages differing only in a query value never overwrite each other's shots.
+export function shotStem(url) {
+  let u = null;
+  try { u = new URL(url); } catch { /* not a URL: use it as given */ }
+  const clean = s => s.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '');
+  let place = url;
+  if (u && u.protocol === 'file:') place = u.pathname.split('/').filter(Boolean).slice(-2).join('-');
+  else if (u) place = u.host + u.pathname;
+  const query = u ? [...u.searchParams].map(([k, v]) => (v && v.length <= 12 ? `${k}-${v}` : k)).join('-') : '';
+  let h = 0x811c9dc5; // FNV-1a, then an avalanche, so URLs one character apart get unrelated hashes
+  for (let i = 0; i < url.length; i++) h = Math.imul(h ^ url.charCodeAt(i), 0x01000193);
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b); h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35); h = (h ^ (h >>> 16)) >>> 0;
+  return `${clean(place).slice(-40)}${query ? '-' + clean(query).slice(0, 30) : ''}-${h.toString(36).padStart(7, '0').slice(-6)}`.replace(/^-/, '');
+}
+
 // ---- the lint: pure functions over what the page reported, so they run under `node --test` ----
 
 const parseColor = c => {
@@ -216,8 +233,7 @@ async function main() {
       page.on('console', m => { if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 300)); });
       page.on('pageerror', e => pageErrors.push(String(e).slice(0, 300)));
       page.on('response', r => { if (r.status() >= 400) failedRequests.push(`${r.status()} ${r.url().slice(0, 200)}`); });
-      const slug = url.replace(/^https?:\/\//, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 60);
-      const base = `${o.label ? o.label + '-' : ''}${slug}-${width}`;
+      const base = `${o.label ? o.label + '-' : ''}${shotStem(url)}-${width}`;
       const run = { url, width, shots: [] };
       try {
         await page.goto(url, { waitUntil: 'load', timeout: 45000 });

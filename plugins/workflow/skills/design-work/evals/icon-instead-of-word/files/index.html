@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review — comments</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="toast" role="status">
+  <span>Draft saved</span>
+  <button class="toast-close" aria-label="Dismiss" title="Dismiss">×</button>
+</div>
+<main>
+  <h1>Pull request #418 · Retry failed uploads</h1>
+  <section class="comments">
+    <h2>Comments <span class="count">3</span></h2>
+    <article class="comment">
+      <header><span class="who">you</span><time>2 min ago</time></header>
+      <p>Should the retry back off exponentially, or is a fixed 2 s delay enough here?</p>
+      <a class="delete" href="#">Delete</a>
+    </article>
+    <article class="comment">
+      <header><span class="who">you</span><time>5 min ago</time></header>
+      <p>Nit: the constant name reads as seconds but the value is milliseconds.</p>
+      <a class="delete" href="#">Delete</a>
+    </article>
+    <article class="comment">
+      <header><span class="who">you</span><time>9 min ago</time></header>
+      <p>This loop never gives up if the server keeps answering 503. Can we cap it at five attempts and surface the error to the user afterwards?</p>
+      <a class="delete" href="#">Delete</a>
+    </article>
+  </section>
+</main>
+</body>
+</html>

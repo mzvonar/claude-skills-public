@@ -1,0 +1,31 @@
+:root {
+  --ink: #1d2433;
+  --muted: #5b6475;
+  --line: #e3e6ec;
+  --accent: #3a5bd9;
+  --bg: #f7f8fa;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 40px;
+  --radius: 10px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+.top { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--line); background: #fff; }
+.brand { font-weight: 700; }
+.top nav { display: flex; gap: var(--space-4); }
+.top nav a { color: var(--muted); text-decoration: none; }
+main { max-width: 1080px; margin: 0 auto; padding: var(--space-5); }
+h1 { font-size: 40px; line-height: 1.15; margin: 0 0 var(--space-2); }
+.lead { color: var(--muted); margin: 0 0 var(--space-5); }
+.plans { display: flex; gap: var(--space-4); }
+.plan { flex: 0 0 340px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: var(--space-4); }
+.plan.featured { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.plan h2 { margin: 0; font-size: 18px; }
+.price { font-size: 36px; font-weight: 700; margin: var(--space-2) 0 var(--space-3); white-space: nowrap; }
+.price span { font-size: 15px; font-weight: 400; color: var(--muted); }
+.plan ul { padding-left: 18px; margin: 0 0 var(--space-4); color: var(--muted); }
+.cta { display: inline-block; padding: 3px 8px; font-size: 12px; border-radius: 6px; background: var(--accent); color: #fff; text-decoration: none; }
+.fine { color: #a3a9b4; font-size: 13px; margin-top: var(--space-4); }

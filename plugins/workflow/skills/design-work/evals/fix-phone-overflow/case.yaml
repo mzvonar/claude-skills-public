@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: fix-phone-overflow
+expected_outcome: |
+  At 390 px the pricing page no longer scrolls sideways: the three plans stack or reflow, and each call-to-action
+  is a comfortable tap target. The desktop layout still shows the plans side by side. The change uses the page's
+  existing tokens, and the work ends with screenshots at a desktop and a phone width that the model looked at,
+  with a report naming the widths checked.
+context:
+  scaffold_script: place-files.sh

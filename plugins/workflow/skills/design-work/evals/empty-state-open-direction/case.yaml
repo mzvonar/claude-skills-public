@@ -1,0 +1,10 @@
+schema_version: "1.1"
+name: empty-state-open-direction
+expected_outcome: |
+  The direction is open, so the response offers two or three clearly different empty-state options, labelled, that
+  can be seen together (one page or a switch), each built with the page's own styles and real copy saying what lands
+  here and how to add the first document, and asks the user to pick (optionally recommending one). The list with
+  documents still renders as before. The work ends with screenshots of the options at a desktop and a phone width
+  that the model looked at.
+context:
+  scaffold_script: place-files.sh
