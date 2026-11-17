@@ -30,7 +30,7 @@ Or make a repo pull them in for everyone who opens it, in `.claude/settings.json
 |---|---|---|
 | `test` | test-audit | this repo |
 | `dev-tools` | diff, html-report, ngrok, codebase-map, worktree, update-skill | this repo |
-| `workflow` | clear-context-handoff, update-guidelines, lessons, backlog, check-acs, showcase | this repo |
+| `workflow` | clear-context-handoff, update-guidelines, lessons, backlog, check-acs, showcase, design-work | this repo |
 | `next-js` | cache-invalidation, clean-dev | this repo |
 | `prisma` | prisma-migrate, prisma7-setup-postgres, prisma7-setup-libsql | this repo |
 | `describe` | plan, changes — `/describe:plan` before the work, `/describe:changes` after it (was `describe-changes` until 2.0.0) | this repo |
