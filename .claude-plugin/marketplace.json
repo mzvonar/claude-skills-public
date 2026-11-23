@@ -32,7 +32,7 @@
     {
       "name": "workflow",
       "source": "./plugins/workflow",
-      "version": "1.10.0",
+      "version": "1.11.0",
       "description": "Delivery workflow skills: context handoffs, guideline hygiene, lessons capture, backlog storage and grooming, acceptance-criteria audits, story showcases, design work with a visual check every round, and a numbers discipline for every computed figure.",
       "author": {
         "name": "Martin Zvonár"

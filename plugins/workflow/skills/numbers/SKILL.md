@@ -1,6 +1,6 @@
 ---
 name: numbers
-description: 'Discipline for every figure Claude states, computes or writes into code — money, prices, VAT, percentages, totals, counts, unit conversions. Arithmetic runs in a tool, never in prose; every number carries its unit and scale (cents vs euros, net vs gross, per month vs per year, percent vs fraction); scale changes happen once at a named boundary; rounding happens once, at the end, under a named rule; every figure that matters is computed a second, independent way before it is stated. Use whenever a reply, report, spec, test fixture or code change contains a computed number — pricing research, invoices, VAT, totals, averages, growth rates, currency or unit conversion, minor/major money units, rounding — and whenever a figure looks off by 10x or 100x. Triggers on: "calculate", "how much", "total", "sum", "VAT", "price", "percent", "margin", "per month", "per year", "cents", "round", "convert", "is this number right".'
+description: 'Discipline for every figure Claude states, computes, writes into code or checks in a document — money, prices, VAT, percentages, totals, counts, conversions. Arithmetic runs in a tool, never in prose; every figure carries its unit and scale (cents vs euros, net vs gross, per month vs per year, percent vs fraction); scale changes happen at one named boundary; rounding happens once, under a named rule; every figure that matters is computed a second, independent way; every figure states its origin (measured, computed, third-party, assumption) and, if it can change, its date. Also audits a document''s figures before it is shared. Use for pricing research, invoices, VAT, averages, growth rates, rounding, and whenever a figure looks off by 10x or 100x. Triggers on: "calculate", "total", "VAT", "price", "percent", "per month", "cents", "round", "convert", "is this number right", "check the numbers", "where does this number come from".'
 ---
 
 # numbers
@@ -92,6 +92,15 @@ route** and compare:
   list price, a competitor's plan)? A €9.90 plan reported as €990 fails this before anything else
   does.
 
+The second route also checks what the formula silently assumes, because a correct calculation on
+the wrong basis passes every arithmetic check:
+
+- **the denominator:** which population it counts (all organisations or only active ones, all
+  invoices or only paid ones);
+- **the window:** which dates it covers, and whether the period boundaries are inclusive;
+- **the averaging method:** mean or median, weighted or unweighted;
+- **annualising:** a monthly figure ×12 assumes every month is alike. Say so when they are not.
+
 If the two routes disagree, **stop and reconcile**: find which input or step differs. Never pick
 the more plausible one, never average them, and never report one while dropping the other.
 
@@ -101,6 +110,31 @@ Numbers from a source (a document, a query result, a tool's output, a user's mes
 verbatim with where they came from, in their original form and unit: `12345 (cents, from
 totalAmountCents)`, not a mentally converted `€123.45`. Do the conversion in the tool, so the raw
 value and the converted one both appear.
+
+### Know where every figure came from, and when
+
+Every figure you state is one of five kinds, and the reader is owed which:
+
+| origin | what it is | what it needs |
+|---|---|---|
+| **measured** | read from a system, file, query or measurement | the source and how it was read (the query, the report, the sheet and cell) |
+| **computed** | derived from other figures | the formula and its inputs, each of them traced too |
+| **third-party** | a report, study, statistic, regulation or a competitor's price list | the original source (not an article quoting it) and its publication date |
+| **assumption** | an estimate or an input someone chose | the word "assumption", and who chose it if known |
+| **unsourced** | nobody can say where it came from | a flag, never a quiet pass |
+
+- **Date anything that can change:** prices, exchange rates, counts, balances, a competitor's
+  plans. `€29 / month (their pricing page, 2026-11-23)`, not `€29 / month`.
+- **Re-read a measured figure from its source** rather than trusting a copy of it made earlier. If
+  the two differ, report both values and the likely reason (another date, scope or definition, or
+  the data changed).
+- **Check a third-party figure's scope** against how you use it: the country, sector, year and
+  sample it covers, and its definition of the thing being counted.
+- **Never fill a gap with a plausible number.** A missing input is reported as missing. A
+  believable invented figure is worse than an obvious blank, because nobody goes looking for it.
+- **Never silently correct someone else's figure.** When a document you are editing or checking
+  carries a wrong number, report the wrong value, the right one and how you got it, and let its
+  owner decide.
 
 ### Show the work
 
@@ -118,8 +152,41 @@ Scan your own reply and diff for numbers before you finish. For each computed fi
 - was anything rounded before the last step, and is the rounding rule named?
 - did a second route agree with it?
 - does any `/ 100`, `* 100`, `/ 10` or `* 10` appear outside a named conversion boundary?
+- is its origin clear (measured, computed, third-party, assumption), and is a figure that can
+  change dated?
+- does the same metric appear anywhere else in the reply or document with a different value?
 
 If any answer is no, fix it or label the figure as unverified. Never send it as fact.
+
+## Auditing a document before it is shared
+
+The rules above are for figures you produce. When asked to check a document someone else wrote, or
+one you wrote earlier ("check the numbers", "where does this figure come from", "is this safe to
+send"), run the same rules over every figure it contains. Scale the effort to the document: a
+three-line message gets a few lines back, a report gets the full table.
+
+- **Inventory.** List every figure: counts, percentages, rates, money, measurements, dates used as
+  data, ranks and ratios. Include tables, charts, footnotes, captions and speaker notes. For each,
+  note the value as written with its unit, where it sits (section, slide, cell), what it claims to
+  measure, and the source the document cites, if any.
+- **Classify** each by origin, using the table in "Know where every figure came from".
+- **Trace measured figures** back to their source and read them again. If the source is out of
+  reach, ask the user where the figure came from before calling it unverifiable.
+- **Recompute computed figures** in a tool from their inputs, with the checks in "Compute every
+  figure that matters a second, independent way". Never accept a derived figure from the text.
+- **Open third-party sources** and confirm the figure, its date, its scope and its definition.
+- **Cross-check the document against itself:** one metric, one value everywhere, and no two figures
+  that contradict each other.
+
+Report the bottom line first: how many figures were checked, how many fall under each status below,
+and whether the document is safe to share. Then one row per figure:
+
+| # | Figure | Where | Origin | Source and method | As of | Status | Note |
+|---|---|---|---|---|---|---|---|
+
+Status is one of **Verified**, **Corrected** (old and new value), **Assumption** (with its owner if
+known), **Unverifiable** or **Unsourced**. End with the fixes the document needs, most important
+first. The document itself stays unchanged until its owner decides.
 
 ## Configuration
 
