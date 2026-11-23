@@ -8,8 +8,8 @@ description: >
   infrastructure costs, audit the measured hot spots in parallel subagent
   batches, bucket the findings with infrastructure wins first, then implement
   bucket-by-bucket via subagents — each bucket benchmarked under the repo's
-  run lock against a machine-local baseline, with a coverage diff proving
-  deletions lost nothing. Use when asked to "audit the integration tests",
+  run lock against a machine-local baseline, with deletions proven by
+  coverage and mutants. Use when asked to "audit the integration tests",
   "speed up the integration suite", "integration tests take too long", "why
   are the repository/DB tests slow", "find duplicate or broken integration
   tests", "run an integration test audit", or to continue a previous audit's
@@ -48,9 +48,9 @@ time hides:
   seed are per-RUN; environment boot is per-FILE; clean+seed rituals are
   per-TEST. Decompose all three layers before hunting per-test wins — a
   minute of `migrate deploy` replay dwarfs any single test.
-- **Coverage is still a proof.** Same runner as the unit tier, so a
-  deletion/merge bucket keeps the mechanical before/after coverage-diff
-  guarantee.
+- **Coverage is still a proof — of lines.** Same runner as the unit tier, so
+  a deletion/merge bucket keeps the mechanical before/after coverage-diff
+  guarantee. Assertions still need the fold probes (Non-negotiables).
 
 First field run (2026-09, a ~2,100-test / 184-file suite): 104.8s → 76.5s
 (−27%), with the DB measured at **4%** of suite cost, ~10s of real sleeps,
@@ -122,6 +122,12 @@ URL destroys real state, not just numbers.
      setup files, not the README. This drives which findings are redundant
      cost and which are load-bearing.
    - `docsDir` — where audit + benchmark docs land (default `docs`).
+   - `noiseFloorPct` — the suite's run-to-run noise in percent:
+     (slowest − fastest) / fastest × 100 over runs of one tree (default: none;
+     Phase 3 measures it). The audit doc states Phase 3's value in that form,
+     and Phase 5 takes that statement as one of its floors, never a value stated
+     another way, such as a ± half-range. The config keeps the widest value any
+     session measured, a record for the next audit, which measures its own.
    - `auditModel`, `auditDepth` — as in /test:test-unit-audit: optional
      cheaper model for the read-only fan-out (user-set, never silent), and
      `"full"` vs `"weighted"` reading depth justified by the timing table.
@@ -165,9 +171,9 @@ URL destroys real state, not just numbers.
 }
 ```
 
-4. **Keep it current**: write the measured `noiseFloorPct` back after the
-   baseline; on later runs re-verify any command that fails and tell the user
-   what changed.
+4. **Keep it current**: after the baseline, write the measured `noiseFloorPct`
+   back unless the config holds a wider one; on later runs re-verify any
+   command that fails and tell the user what changed.
 
 ## Non-negotiables
 
@@ -202,6 +208,75 @@ URL destroys real state, not just numbers.
   Only when the real implementation genuinely cannot be exercised cheaply
   does a 1–2 line, mechanism-explained delta get documented in the benchmark
   doc and accepted.
+  An assertion or snapshot removed from a test that stays is a fold row of its
+  own, naming the assertion that now carries its defect, and is probed like
+  any fold.
+- **Prove each fold red.** Coverage proves lines and reading proves where an
+  assertion went; neither proves the survivor still fails. Every assertion the
+  fold record maps to a survivor is proven by a mutant — the smallest edit
+  that produces only the defect the deleted assertion caught. For each of the
+  two tests, the executor predicts the assertion it must fail at and the value
+  it must show. Read the outcome in this order. The deleted test, run in the
+  base worktree under the mutant, must fail at its mapped assertion with the
+  predicted value; otherwise the mutant is not that defect, and another is
+  written. Then the survivor. Red at its mapped assertion with the predicted
+  value proves the fold. Red earlier means the mutant is too broad: narrow it,
+  and when two narrower edits still fail earlier, an earlier assertion carries
+  the defect, so the row's survivor side moves to the assertion that failed
+  while the deleted test keeps its own. Green, red later or red with another
+  value means the assertion is lost: put it back, in the survivor or by
+  restoring the deleted test, and probe again; such a fold is never listed
+  unproven. Each rewrite goes back to the executor that wrote the mutant, with
+  the failing output. A fold is listed unproven only when the executor's
+  mutant and two more leave the deleted test not failing as predicted, with
+  its reason, on the user's yes asked in the probe pass before the benchmark;
+  a no restores the deleted test. A test moved to another tier and rewritten
+  (onto a captured literal or a mocked boundary) is a fold too: collected
+  totals prove the move, not that it still fails. One mutant serves every fold
+  of one defect. A deletion with no survivor names its class and its proof: a
+  dead test, the list command showing it not collected or skipped in every
+  project; a cannot-fail test, a mutant of the behavior its title claims under
+  which it stays green in the base worktree; a deliberate drop, its reason,
+  put to the user with the unproven folds (measured at the e2e tier: two folds
+  onto lower-tier survivors passed a both-tests reading, yet a mutant of the
+  behavior each deleted test asserted left its survivor green).
+- **The probes run in one scripted pass per bucket.** Executors write each
+  fold's mutant to the JSON file their brief names, outside the tree: the
+  file, the text it replaces, the replacement, and for each test the assertion
+  it must fail at and the value it must show. They apply none and run no
+  probe, and the orchestrator writes the fold record. After the bucket's
+  agents land and before its benchmark, the orchestrator runs the pass
+  detached, in Phase 3's `setsid nohup` form with an exit file, and watches it
+  to its end. Each run uses the arbiter's own runner filtered to its test,
+  under the arbiter's wrapper, so it takes the run lock where the project has
+  one, with one tree's server up at a time so a run cannot reach the other
+  tree's. First every survivor runs in the branch tree and every deleted test
+  in the base worktree without a mutant, retries off: each must be green, a
+  red one is triaged like any failure, and a red survivor goes back to its
+  owner and is probed after its repair. Before the first mutant, the pass
+  writes a journal at a path the audit doc names, outside both trees: each
+  target's path, original content and sha256. A trap on exit restores every
+  target from it, the pass deletes it once every target's hash is proven, and
+  a session that finds it restores from it before anything else. Each probe
+  applies its replacement in both trees with a script that reads the JSON as
+  data, never through a shell; rebuilds or restarts what serves the target
+  where a tree's test needs it (a built app, a server that loaded the rule, a
+  database, which a mutant of a migration, seed or database function reaches
+  through `dbSetupCommand` under the lock unless each run's global setup
+  migrates again), a run command that builds being that rebuild; runs the
+  deleted test, then the survivor, retries off; and restores the target from
+  the journal, proving its hash. A replacement whose text does not occur
+  exactly once in each tree aborts its probe, which proves nothing until the
+  replacement is rewritten so it does. Where a run pays a build or a global
+  setup, mutants of unrelated areas share one run after one typecheck of the
+  applied batch: a red counts only at its named assertion, and anything else
+  reruns alone. One clean rebuild or restart of what the pass touched ends it,
+  since a reverted mutant lives on in a built artifact or a running server;
+  Phase 5's build of each side is that rebuild when the benchmark follows
+  directly. Bucket 4's red-probes run in the same pass, in the branch tree
+  only. A survivor edited after its probe, by a repair or a review fix, is
+  probed again before the bucket closes. The fold row records the mutant and
+  each test's failing assertion, as file:line and a quoted anchor.
 - **One-shot mode always**, and **read result counters by grepping the whole
   log** — never a fixed-size tail; a red run can read green from its last
   lines.
@@ -436,7 +511,8 @@ Write `<docsDir>/test-integration-audit-<date>.md` with buckets in THIS order:
    to deletions/merges; for MOVES the proof is **run-mode collected totals
    across all projects before/after** (list-mode counts drift on
    dynamic/env-driven cases — measured ±5 — while run-mode reconciled
-   exactly). A move DOWN to unit must
+   exactly), and a move that rewrites the test is a fold, proven by its
+   probes (Non-negotiables). A move DOWN to unit must
    carry mock fidelity (the new mock typed against the real module —
    `vi.mocked`/`satisfies` — because an untyped mock is the drift this tier
    exists to catch), and a move OUT of the arbiter command triggers Phase 5's
@@ -459,23 +535,24 @@ Write `<docsDir>/test-integration-audit-<date>.md` with buckets in THIS order:
 4. **Broken tests** — correctness at ~0 runtime cost, grouped: seed-satisfied
    / ordering-accident / tx-escape / swallowed-failure / clock-drift /
    dead-skipped. **Every repaired cannot-fail test is verified by a
-   red-probe**: break the product query or guard in a scratch edit (comment
-   out the write, flip the filter), watch the NEW assertion go red, revert,
-   prove the revert with an empty product diff. Tx-escape findings repair the
-   PRODUCT seam where possible (inject the client) — that is a product
-   change; if it can't land now, file it to the deferred-work ledger with an
-   ID and keep the test cluster's manual cleanup with a comment pointing at
-   the ID. **Narrowing an assertion to kill a flake is a coverage deletion
-   unless proven otherwise**: write down the regression the OLD assertion
-   caught, then red-probe the NEW one against THAT regression — not against
-   any regression (measured: a global `count({}) === 0` that raced other
-   files' deliberately committed rows was scoped to one seeded identity —
-   race-free, and vacuous: the code path under test had no route to that
-   identity, so a regression creating a row for ANY other one stayed green,
-   and the red-probe that would have shown it was never asked. Two reviewers
-   found it by asking "what regression would still pass?", not "is this
-   race-free?"). The breadth-preserving fix is the transaction-scoped count
-   in "Recurring mechanisms" below.
+   red-probe**, run in the bucket's probe pass (Non-negotiables): a mutant
+   that breaks the product query or guard (comments out the write, flips the
+   filter), the NEW assertion red at its line in the branch tree, and the
+   target's hash proven after the revert. Tx-escape findings repair the
+   PRODUCT seam where possible (inject the client) — that is a product change;
+   if it can't land now, file it to the deferred-work ledger with an ID and
+   keep the test cluster's manual cleanup with a comment pointing at the ID.
+   **Narrowing an assertion to kill a flake is a coverage deletion unless
+   proven otherwise**: write down the regression the OLD assertion caught,
+   then red-probe the NEW one against THAT regression — not against any
+   regression (measured: a global `count({}) === 0` that raced other files'
+   deliberately committed rows was scoped to one seeded identity — race-free,
+   and vacuous: the code path under test had no route to that identity, so a
+   regression creating a row for ANY other one stayed green, and the red-probe
+   that would have shown it was never asked. Two reviewers found it by asking
+   "what regression would still pass?", not "is this race-free?"). The
+   breadth-preserving fix is the transaction-scoped count in "Recurring
+   mechanisms" below.
 5. **Parallelism & isolation experiments** — explicitly experimental, each
    lands only with a measured win and reverts with a recorded measurement:
    worker-count sweep BOUNDED by the connection budget (workers ×
@@ -503,13 +580,15 @@ not be re-run).
   fall back to the detached `setsid nohup … ; echo $? > tmp/runN-exit`
   protocol only if a run genuinely exceeds tool timeouts.
 - Record per run: wall clock, the runner's duration line and phase breakdown,
-  pass/fail/skip counts, collected count, container state (warm/cold), the
-  box as MEASURED (`nproc`, RAM — never copied from a config comment; a
-  field baseline claimed 14 CPUs on a 4-CPU box), and
-  the DB-side totals (`pg_stat_statements` sum) so later buckets can claim
-  DB-side deltas honestly. Derive `noiseFloorPct` from the spread and write
-  it into the config — expect it to be worse than the unit tier's (a real
-  database breathes: autovacuum, checkpoints, page cache).
+  pass/fail/skip counts, collected count, container state (warm/cold), the box
+  as MEASURED (`nproc`, RAM — never copied from a config comment; a field
+  baseline claimed 14 CPUs on a 4-CPU box), and the DB-side totals
+  (`pg_stat_statements` sum) so later buckets can claim DB-side deltas
+  honestly. Derive `noiseFloorPct` from the full spread,
+  (slowest − fastest) / fastest × 100, never a ± half-range around the mean;
+  state it in the audit doc in that form, and write it into the config unless
+  the config holds a wider one — expect it to be worse than the unit tier's (a
+  real database breathes: autovacuum, checkpoints, page cache).
 - **Baseline the receiving lanes too when tier moves look likely** — Phase
   0's inventory usually already says so (the first field run had 56
   candidates). One timed run each of the unit (and any scripts/etc.)
@@ -530,6 +609,20 @@ not be re-run).
 
 ## Phase 4 — Implement a bucket (write subagents)
 
+- **Record the bucket's starting tree and set the base worktree to it before
+  any agent launches.** Write its HEAD sha into the audit doc, and keep
+  `git diff HEAD --binary` and a copy of its untracked files outside the tree,
+  where the audit doc says (both empty on a clean tree). One second worktree
+  serves the whole audit as the base, for Phase 5 and for each fold probe's
+  deleted test: create it at the first bucket
+  (`git worktree add --detach <base> <sha>`, then the real install of Phase
+  3's worktree gotcha), and move it to each later bucket's start
+  (`git -C <base> checkout --force --detach <sha>`,
+  `git -C <base> clean -fd`). Each time, apply the kept diff
+  (`git -C <base> apply --binary <diff>`) and the untracked copies, and prove
+  it equal to the branch tree by the tree id each gives from a fresh index
+  file (`GIT_INDEX_FILE=<new file> git add -A`, then
+  `GIT_INDEX_FILE=<new file> git write-tree`). Phase 6 removes it.
 - 3–6 agents per bucket, **disjoint file ownership**, launched in **staggered
   batches of 2–3** (prompt-cache races, rate-limit blast radius, core
   oversubscription — same reasoning as the sibling skills). The ORCHESTRATOR
@@ -561,6 +654,9 @@ not be re-run).
   builder, the orchestrator's after-pass extracts it into the shared
   test-utils location (measured: a deterministic-embedding helper and two
   action shims each grew three copies before a review consolidated them).
+  Every brief also names the JSON file, outside the tree, that its executor
+  writes each fold's mutant to, and says to apply none and run no probe
+  (Non-negotiables).
 - **Premise corrections are a deliverable.** Executors verify each finding's
   premise before acting — at this tier especially the redundancy claims (is
   this cleanup REALLY covered by rollback, or does the code under test
@@ -576,25 +672,32 @@ not be re-run).
   policy ratchets/scanners** (count ratchets, style scans) — audit edits trip
   them in BOTH directions (measured: inlined fixture defaults carried banned
   casts into new code; deletion buckets LOWERED the count — lower the
-  baseline to lock a drop in), then the bucket benchmark.
+  baseline to lock a drop in), then the fold probes (Non-negotiables), then
+  the bucket benchmark.
 
 ## Phase 5 — Benchmark the bucket
 
-- Full suite through the lock, same warm-up-then-measure protocol, two–three
-  runs per side. A delta smaller than the noise floor is "within noise",
-  never spun.
+- Full suite through the lock, same warm-up-then-measure protocol. **Two runs
+  per side, interleaved** (base, branch, base, branch). The base is the base
+  worktree at the bucket's start (Phase 4). **The floor** is the widest of the
+  session's two same-tree spreads and the Phase 3 spread, where the audit doc
+  states it as a full spread. Claim a change only when both pairs beat the
+  floor with the same sign, and report the delta of the means; a side that ran
+  once runs again before any claim. Anything else is "within noise", never
+  spun (measured at the e2e tier: with no change at all, one pair of two beats
+  its floor about half the time).
 - **Attribute on the right clock.** Hot-test buckets also time just the
   touched files before/after, and buckets that claimed DB-side wins attach
   the `pg_stat_statements` before/after (total time and CALLS — a fixture
   batching fix should show the round-trip count falling even when wall time
   sits near noise).
-- **Deletion/merge buckets attach the coverage diff** as the
-  zero-coverage-loss proof.
+- **Deletion/merge buckets attach the coverage diff** and the fold record,
+  its unproven folds listed, as the zero-coverage-loss proof.
 - **Decompose relocated vs saved** when tests moved tier or project: cost
   that moved gets its own timed row AND its CI wiring in the same bucket — a
   relocation reported as savings is dishonest, and a suite no workflow
   invokes rots silently. **The receiving lane gets the paired protocol
-  too**: interleaved pairs of base-commit vs branch, same box, same session,
+  too**: interleaved pairs of base vs branch, same box, same session,
   the CI-SHAPED command (projects CI runs in one invocation are timed as one
   invocation) — never against a number from another day, branch or worktree
   (measured: a first "+14.5s relocated" compared against a day-old benchmark
@@ -640,19 +743,63 @@ The audit is not done when the last benchmark is green:
 
 - **Ledger dispositions.** Close every pre-existing deferred-work item the
   audit fixed (append a resolution note saying what landed and where); file
-  every finding it deliberately did NOT fix — unrunnable suites, stale
-  skips awaiting infrastructure, product recommendations — with an ID, and
-  point the affected test's comment at that ID.
+  every finding it deliberately did NOT fix — unrunnable suites, stale skips
+  awaiting infrastructure, product recommendations — with an ID, and point the
+  affected test's comment at that ID. A filed finding names the command that
+  counted it, and where the ledger's items carry a `trigger` (the
+  `/workflow:backlog` deferred-work shape), its trigger names the class of
+  change, not the rows it counted, which miss the next one written the same
+  way (measured at the e2e tier: a count filed as 22 was 27 by its own
+  definition).
+- **Check the ledger's open triggers** against the audit's change set, where
+  its items carry one. Take the change set once, untracked files and plain
+  `mv` renames included: copy the index to a temporary file and, with
+  `GIT_INDEX_FILE` pointing at the copy, run `git add -A` and then
+  `git diff --cached --name-status -M <start>`. `<start>` is the HEAD the
+  audit doc records for the first implemented bucket (for an audit begun
+  before that record existed, the parent of its first bucket commit, or with
+  none, the merge base with the base branch). Once the base branch has been
+  merged in since, which shows as `git merge-base HEAD <base branch>`
+  differing from `git merge-base <start> <base branch>`, diff against
+  `git merge-base HEAD <base branch>` instead, so the merged work does not
+  count as the audit's. Repoint every entry that names a renamed file. Where
+  the ledger follows `/workflow:backlog`, groom it with that skill, the change
+  set and each rename's old path as the work being scoped, and put its report
+  to the user. Otherwise grep the ledger once for every changed path and every
+  rename's old path (`grep -nF -f <path list> <ledger>`), read the trigger
+  lines alone against the change's classes (config, build scripts), and append
+  a dated note to each item that fired, acted on or not (measured at the e2e
+  tier: six fired on changes no bucket aimed at; the wrap-up caught four, and
+  a review found the two on a build script and a renamed spec).
+- **Re-read every finding the audit chose not to act on**: grep all their
+  quoted anchors (Phase 2) in the final tree in one script, since a later
+  bucket's repair can remove the line while the record still says it stands. A
+  finding whose anchor is gone gets a dated note naming the bucket that
+  removed it, and is closed or rescoped.
+- **Run every recorded fold mutant once more on the final tree**, against its
+  survivor, in one pass with Phase 4's journal and batching: a later bucket's
+  edit can break an earlier fold, and a survivor that stays green under its
+  mutant has lost it.
 - **notesFile.** Append a History entry (branch, docs produced, headline
   numbers, what was deferred and why) and new Lessons; correct anything the
   audit proved wrong. This is the durable memory the next audit starts from.
-- **Config write-back.** `noiseFloorPct`, any command that changed, and
-  pointers to rejected experiments so nobody re-runs them blind.
+  A headline number names the commit it ran at (on an uncommitted tree, its
+  HEAD and the bucket it holds), never "the last commit", which moves as
+  wrap-up commits land.
+- **Config write-back.** `noiseFloorPct`, raised to the widest same-tree
+  spread any session measured and stated in the audit doc in that form, any
+  command that changed, and pointers to rejected experiments so nobody re-runs
+  them blind.
 - **Cross-links.** Each benchmark doc links its predecessor; the audit doc
   gains an implementation-status footer stating what landed and what didn't.
+- **Remove the base worktree** (`git worktree remove --force <base>`; it holds
+  only the recorded trees).
 - **Commits/push per the policy agreed at the start.** If per-bucket
   commits were not authorized, state exactly what is uncommitted and offer
   the commits — do not leave the user to discover a 100-file working tree.
+  Before the first push, which needs the user's own yes, check every commit
+  message against the repo's commit rules, line lengths included: a reword
+  after the push rewrites shared history.
 - **Session memory / handoff notes**, if the environment keeps them.
 - **Review.** An audit PR is large by construction (150–200 files in the
   field). Check the AI reviewer's file cap and force its run explicitly — a
